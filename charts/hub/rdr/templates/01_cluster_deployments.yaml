@@ -135,7 +135,7 @@ metadata:
     name: {{ $cluster.name }}
     vendor: OpenShift
     cluster.open-cluster-management.io/clusterset: {{ $clusterSet }}
-    clusterGroup: {{ $clusterSet }}
+    clusterGroup: {{ $cluster.clusterGroup }}
     purpose: regionalDR
   name: {{ $cluster.name }}
 spec:

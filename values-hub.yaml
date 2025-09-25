@@ -96,11 +96,19 @@ clusterGroup:
     verbosity: "-vvv"
     jobs: []
   managedClusterGroups:
-    resilient:
-      name: resilient
+    resilient-1:
+      name: resilient-1
       helmOverrides:
         - name: clusterGroup.isHubCluster
           value: "false"
       acmlabels:
         - name: clusterGroup
-          value: resilient
+          value: resilient-1
+    resilient-2:
+      name: resilient-2
+      helmOverrides:
+        - name: clusterGroup.isHubCluster
+          value: "false"
+      acmlabels:
+        - name: clusterGroup
+          value: resilient-2
