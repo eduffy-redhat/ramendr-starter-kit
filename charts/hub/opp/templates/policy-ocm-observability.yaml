@@ -1,17 +1,3 @@
-{{- $obc := (lookup "objectbucket.io/v1alpha1" "ObjectBucket" "" "openshift-storage-obc-observability") -}}
-{{- $secret := (lookup "v1" "Secret" "openshift-storage" "noobaa-admin") -}}
-{{- $bucketName := "obc-observability-bucket" -}}
-{{- $endpoint := "s3.openshift-storage.svc.cluster.local" -}}
-{{- $accessKey := "placeholder" -}}
-{{- $secretKey := "placeholder" -}}
-{{- if $obc -}}
-{{- $bucketName = $obc.spec.endpoint.bucketName -}}
-{{- $endpoint = $obc.spec.endpoint.bucketHost -}}
-{{- end -}}
-{{- if $secret -}}
-{{- $accessKey = $secret.data.AWS_ACCESS_KEY_ID | b64dec -}}
-{{- $secretKey = $secret.data.AWS_SECRET_ACCESS_KEY | b64dec -}}
-{{- end -}}
 apiVersion: policy.open-cluster-management.io/v1
 kind: Policy
 metadata:
@@ -21,6 +7,7 @@ metadata:
     policy.open-cluster-management.io/controls: CA-7 Continuous Monitoring
     policy.open-cluster-management.io/standards: NIST SP 800-53
     argocd.argoproj.io/compare-options: IgnoreExtraneous
+    argocd.argoproj.io/sync-options: Prune=false
   labels:
     open-cluster-management.io/policy-set: openshift-plus
   name: policy-ocm-observability
@@ -49,11 +36,11 @@ spec:
               thanos.yaml: |
                 type: s3
                 config:
-                  bucket: "{{ $bucketName }}"
-                  endpoint: "{{ $endpoint }}"
+                  bucket: "obc-observability-bucket"
+                  endpoint: "s3.openshift-storage.svc.cluster.local"
                   insecure: false
-                  access_key: "{{ $accessKey }}"
-                  secret_key: "{{ $secretKey }}"
+                  access_key: "placeholder"
+                  secret_key: "placeholder"
                   http_config:
                     insecure_skip_verify: true
                     tls_config:
