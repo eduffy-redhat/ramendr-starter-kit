@@ -19,6 +19,10 @@ clusterGroup:
       name: odf-multicluster-orchestrator
       namespace: openshift-operators
 
+    openshift-data-foundation:
+      name: odf-operator
+      namespace: openshift-storage
+
   projects:
     - hub
     - opp
@@ -91,6 +95,16 @@ clusterGroup:
       project: hub
       chart: golang-external-secrets
       chartVersion: 0.1.*
+
+    odf:
+      name: odf
+      namespace: openshift-storage
+      project: opp
+      chart: openshift-data-foundations
+      chartVersion: 0.2.*
+      extraValueFiles:
+        - '$patternref/overrides/values-odf-chart.yaml'
+
 
   imperative:
     verbosity: "-vvv"
