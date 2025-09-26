@@ -29,38 +29,11 @@ spec:
         - complianceType: musthave
           objectDefinition:
             apiVersion: v1
-            kind: Secret
+            kind: ConfigMap
             metadata:
-              name: thanos-object-storage
+              name: observability-config
               namespace: open-cluster-management-observability
-            type: Opaque
-            stringData:
-              thanos.yaml: |
-                type: s3
-                config:
-                  bucket: "obc-observability-bucket"
-                  endpoint: "s3.openshift-storage.svc.cluster.local"
-                  insecure: false
-                  access_key: "placeholder"
-                  secret_key: "placeholder"
-                  http_config:
-                    insecure_skip_verify: true
-                    tls_config:
-                      insecure_skip_verify: true
-        - complianceType: musthave
-          objectDefinition:
-            apiVersion: observability.open-cluster-management.io/v1beta2
-            kind: MultiClusterObservability
-            metadata:
-              name: observability
-              namespace: open-cluster-management-observability
-              annotations:
-                argocd.argoproj.io/health-check-ignore: "true"
-            spec:
-              observabilityAddonSpec: {}
-              storageConfig:
-                metricObjectStorage:
-                  key: thanos.yaml
-                  name: thanos-object-storage
+            data:
+              enabled: "true"
         remediationAction: enforce
         severity: medium

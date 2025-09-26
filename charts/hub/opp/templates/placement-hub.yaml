@@ -5,6 +5,8 @@ metadata:
     open-cluster-management.io/policy-set: openshift-plus
   name: placement-openshift-plus-hub
   namespace: policies
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   predicates:
   - requiredClusterSelector:

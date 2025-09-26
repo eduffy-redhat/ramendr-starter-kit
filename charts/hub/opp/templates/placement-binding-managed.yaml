@@ -5,6 +5,8 @@ metadata:
     open-cluster-management.io/policy-set: openshift-plus
   name: binding-policy-openshift-plus-managed
   namespace: policies
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   placementRef:
     apiGroup: cluster.open-cluster-management.io

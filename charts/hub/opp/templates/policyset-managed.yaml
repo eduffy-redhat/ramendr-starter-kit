@@ -5,6 +5,8 @@ metadata:
     open-cluster-management.io/policy-set: openshift-plus
   name: openshift-plus-managed
   namespace: policies
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   description: The OpenShift Platform Plus policy set applies several policies that
     installs the OpenShift Platform Plus products using best practices that allow
