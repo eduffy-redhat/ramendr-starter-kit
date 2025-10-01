@@ -53,7 +53,7 @@ clusterGroup:
       name: acm
       namespace: open-cluster-management
       project: hub
-      chart: acm
+      #chart: acm
       repoURL: https://github.com/mbaldessari/acm-chart.git
       chartVersion: fix-acm-policies-without-clustergroup-label
       path: "."
