@@ -178,7 +178,7 @@ validate-prereq: ## verify pre-requisites
 	@if [ ! -f /run/.containerenv ]; then\
 	  echo "Checking prerequisites:";\
 	  echo -n "  Check for python-kubernetes: ";\
-	  if ! ansible -m ansible.builtin.command -a "{{ ansible_python_interpreter }} -c 'import kubernetes'" localhost > /dev/null 2>&1; then echo "Not found"; exit 1; fi;\
+	  if ! ansible -m ansible.builtin.command -a "python -c 'import kubernetes'" localhost > /dev/null 2>&1; then echo "Not found"; exit 1; fi;\
 	  echo "OK";\
 	  echo -n "  Check for kubernetes.core collection: ";\
 	  if ! ansible-galaxy collection list | grep kubernetes.core > /dev/null 2>&1; then echo "Not found"; exit 1; fi;\
