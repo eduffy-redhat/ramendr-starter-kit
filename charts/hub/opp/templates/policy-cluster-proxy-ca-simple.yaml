@@ -1,0 +1,151 @@
+apiVersion: policy.open-cluster-management.io/v1beta1
+kind: Policy
+metadata:
+  annotations:
+    policy.open-cluster-management.io/categories: CA Assessment Authorization and
+      Monitoring
+    policy.open-cluster-management.io/controls: CA-7 Continuous Monitoring
+    policy.open-cluster-management.io/standards: NIST SP 800-53
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
+    argocd.argoproj.io/sync-options: Prune=false
+    argocd.argoproj.io/health-check-ignore: "true"
+    argocd.argoproj.io/hook: "Skip"
+  labels:
+    open-cluster-management.io/policy-set: openshift-plus
+  name: policy-cluster-proxy-ca-simple
+  namespace: policies
+spec:
+  disabled: false
+  policy-templates:
+  - objectDefinition:
+      apiVersion: policy.open-cluster-management.io/v1beta1
+      kind: ConfigurationPolicy
+      metadata:
+        name: policy-cluster-proxy-ca-simple
+        annotations:
+          argocd.argoproj.io/compare-options: IgnoreExtraneous
+      spec:
+        object-templates:
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: batch/v1
+            kind: Job
+            metadata:
+              name: extract-cluster-cas-simple
+              namespace: openshift-config
+              labels:
+                app.kubernetes.io/name: cluster-proxy-ca
+                app.kubernetes.io/component: ca-extraction
+            spec:
+              template:
+                spec:
+                  containers:
+                  - name: ca-extractor
+                    image: registry.redhat.io/openshift4/ose-cli:latest
+                    command:
+                    - /bin/bash
+                    - -c
+                    - |
+                      set -euo pipefail
+                      
+                      echo "Starting simplified CA certificate extraction..."
+                      
+                      # Create combined CA bundle
+                      CA_BUNDLE_FILE="/tmp/combined-ca-bundle.crt"
+                      touch "$CA_BUNDLE_FILE"
+                      
+                      # Extract hub cluster CA
+                      echo "Extracting hub cluster CA..."
+                      oc get configmap -n openshift-config-managed trusted-ca-bundle -o jsonpath="{.data['ca-bundle\.crt']}" >> "$CA_BUNDLE_FILE" 2>/dev/null || echo "Warning: Could not extract hub cluster CA"
+                      
+                      # Get managed clusters and extract their CAs
+                      echo "Extracting managed cluster CAs..."
+                      MANAGED_CLUSTERS=$(oc get managedclusters -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+                      
+                      for cluster in $MANAGED_CLUSTERS; do
+                        if [[ "$cluster" == "local-cluster" ]]; then
+                          continue
+                        fi
+                        echo "Processing cluster: $cluster"
+                        
+                        # Try ManagedClusterInfo first
+                        if oc get managedclusterinfo -n "$cluster" -o jsonpath='{.items[0].spec.loggingCA}' 2>/dev/null | grep -q "BEGIN CERTIFICATE"; then
+                          oc get managedclusterinfo -n "$cluster" -o jsonpath='{.items[0].spec.loggingCA}' >> "$CA_BUNDLE_FILE" 2>/dev/null
+                          echo "  CA extracted from ManagedClusterInfo"
+                        else
+                          echo "  No CA found in ManagedClusterInfo for $cluster"
+                        fi
+                      done
+                      
+                      # Clean up duplicates
+                      sort "$CA_BUNDLE_FILE" | uniq > "${CA_BUNDLE_FILE}.tmp" && mv "${CA_BUNDLE_FILE}.tmp" "$CA_BUNDLE_FILE"
+                      
+                      # Create ConfigMap
+                      echo "Creating cluster-proxy-ca-bundle ConfigMap..."
+                      oc create configmap cluster-proxy-ca-bundle \
+                        --from-file=ca-bundle.crt="$CA_BUNDLE_FILE" \
+                        -n openshift-config \
+                        --dry-run=client -o yaml | oc apply -f -
+                      
+                      # Update proxy
+                      echo "Updating cluster proxy..."
+                      oc patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"cluster-proxy-ca-bundle"}}}' || true
+                      
+                      echo "CA extraction completed"
+                    env:
+                    - name: KUBECONFIG
+                      value: "/var/run/secrets/kubernetes.io/serviceaccount/..data/token"
+                  restartPolicy: Never
+                  serviceAccountName: ca-extractor-sa
+              backoffLimit: 3
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              name: ca-extractor-sa
+              namespace: openshift-config
+              labels:
+                app.kubernetes.io/name: cluster-proxy-ca
+                app.kubernetes.io/component: ca-extraction
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRole
+            metadata:
+              name: ca-extractor-role
+              labels:
+                app.kubernetes.io/name: cluster-proxy-ca
+                app.kubernetes.io/component: ca-extraction
+            rules:
+            - apiGroups: [""]
+              resources: ["configmaps"]
+              verbs: ["get", "list", "create", "update", "patch"]
+            - apiGroups: ["config.openshift.io"]
+              resources: ["proxies"]
+              verbs: ["get", "patch"]
+            - apiGroups: ["cluster.open-cluster-management.io"]
+              resources: ["managedclusters"]
+              verbs: ["get", "list"]
+            - apiGroups: ["internal.open-cluster-management.io"]
+              resources: ["managedclusterinfos"]
+              verbs: ["get", "list"]
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRoleBinding
+            metadata:
+              name: ca-extractor-rolebinding
+              labels:
+                app.kubernetes.io/name: cluster-proxy-ca
+                app.kubernetes.io/component: ca-extraction
+            subjects:
+            - kind: ServiceAccount
+              name: ca-extractor-sa
+              namespace: openshift-config
+            roleRef:
+              kind: ClusterRole
+              name: ca-extractor-role
+              apiGroup: rbac.authorization.k8s.io
+        remediationAction: enforce
+        severity: high
