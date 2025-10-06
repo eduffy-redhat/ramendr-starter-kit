@@ -78,7 +78,7 @@ clusterGroup:
             factor: 2
             maxDuration: 3m
         syncOptions:
-          - syncTimeout=1800s
+          - syncTimeout=3600s
           - CreateNamespace=true
           - PrunePropagationPolicy=foreground
           - RespectIgnoreDifferences=true
