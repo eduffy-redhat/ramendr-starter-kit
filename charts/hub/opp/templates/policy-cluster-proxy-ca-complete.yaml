@@ -127,54 +127,7 @@ spec:
                       echo "Updating hub cluster proxy..."
                       oc patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"cluster-proxy-ca-bundle"}}}' || true
                       
-                      # Create policy to distribute CA bundle to managed clusters
-                      echo "Creating distribution policy for managed clusters..."
-                      cat <<EOF | oc apply -f -
-                      apiVersion: policy.open-cluster-management.io/v1
-                      kind: Policy
-                      metadata:
-                        name: policy-cluster-proxy-ca-bundle-distribution
-                        namespace: open-cluster-management
-                        annotations:
-                          policy.open-cluster-management.io/categories: CA Assessment Authorization and Monitoring
-                          policy.open-cluster-management.io/controls: CA-7 Continuous Monitoring
-                          policy.open-cluster-management.io/standards: NIST SP 800-53
-                      spec:
-                        disabled: false
-                        policy-templates:
-                        - objectDefinition:
-                            apiVersion: policy.open-cluster-management.io/v1
-                            kind: ConfigurationPolicy
-                            metadata:
-                              name: policy-cluster-proxy-ca-bundle-distribution
-                            spec:
-                              object-templates:
-                              - complianceType: musthave
-                                objectDefinition:
-                                  apiVersion: v1
-                                  kind: ConfigMap
-                                  metadata:
-                                    name: cluster-proxy-ca-bundle
-                                    namespace: openshift-config
-                                    labels:
-                                      app.kubernetes.io/name: cluster-proxy-ca
-                                      app.kubernetes.io/component: ca-bundle
-                                      cluster.open-cluster-management.io/type: managed
-                                  data:
-                                    ca-bundle.crt: |
-$(cat "$CA_BUNDLE_FILE" | sed 's/^/                                      /')
-                              - complianceType: musthave
-                                objectDefinition:
-                                  apiVersion: config.openshift.io/v1
-                                  kind: Proxy
-                                  metadata:
-                                    name: cluster
-                                  spec:
-                                    trustedCA:
-                                      name: cluster-proxy-ca-bundle
-                              remediationAction: enforce
-                              severity: high
-                      EOF
+                      echo "CA bundle extraction and hub proxy update completed successfully."
                       
                       # Create placement rule for managed clusters
                       echo "Creating placement rule for managed clusters..."
