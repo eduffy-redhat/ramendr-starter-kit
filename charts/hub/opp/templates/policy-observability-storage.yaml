@@ -39,7 +39,7 @@ spec:
                 app.kubernetes.io/component: storage-config
               annotations:
                 argocd.argoproj.io/hook: "PostSync"
-    argocd.argoproj.io/sync-wave: "2"
+                argocd.argoproj.io/sync-wave: "2"
                 argocd.argoproj.io/hook-delete-policy: "HookSucceeded"
             spec:
               template:
