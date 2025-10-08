@@ -12,6 +12,12 @@ placementRef:
   kind: PlacementRule
   apiGroup: apps.open-cluster-management.io
 subjects:
-- name: openshift-plus-hub
-  kind: PolicySet
+- name: policy-ocm-observability
+  kind: Policy
+  apiGroup: policy.open-cluster-management.io
+- name: policy-observability-storage
+  kind: Policy
+  apiGroup: policy.open-cluster-management.io
+- name: policy-cluster-proxy-ca-complete
+  kind: Policy
   apiGroup: policy.open-cluster-management.io
