@@ -92,7 +92,7 @@ spec:
               apiGroup: rbac.authorization.k8s.io
         - complianceType: musthave
           objectDefinition:
-            apiVersion: observability.open-cluster-management.io/v1beta2
+            apiVersion: observability.open-cluster-management.io/v1beta1
             kind: MultiClusterObservability
             metadata:
               name: observability
@@ -101,16 +101,5 @@ spec:
               observabilityAddonSpec:
                 enableMetrics: true
                 interval: 30
-              advanced:
-                retentionConfig:
-                  retentionResolutionRaw: 5d
-                  retentionResolution5m: 10d
-                  retentionResolution1h: 1y
-              nodeSelector:
-                node-role.kubernetes.io/worker: ""
-              tolerations:
-              - key: node-role.kubernetes.io/master
-                operator: Exists
-                effect: NoSchedule
         remediationAction: enforce
         severity: medium
