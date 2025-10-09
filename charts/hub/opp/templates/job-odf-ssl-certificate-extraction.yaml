@@ -77,6 +77,55 @@ spec:
             fi
           }
           
+          # Function to extract ingress CA from cluster
+          extract_ingress_ca() {
+            local cluster_name="$1"
+            local output_file="$2"
+            local kubeconfig="${3:-}"
+            
+            echo "Extracting ingress CA from cluster: $cluster_name"
+            
+            if [[ -n "$kubeconfig" && -f "$kubeconfig" ]]; then
+              # Use provided kubeconfig
+              echo "  Using kubeconfig: $kubeconfig"
+              # Try to get ingress CA from router-ca secret
+              if oc --kubeconfig="$kubeconfig" get secret -n openshift-ingress-operator router-ca -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d > "$output_file" 2>/dev/null; then
+                if [[ -s "$output_file" ]]; then
+                  echo "  Ingress CA extracted from $cluster_name using kubeconfig"
+                  return 0
+                fi
+              fi
+              # Fallback: try to get from ingress operator config
+              if oc --kubeconfig="$kubeconfig" get secret -n openshift-ingress-operator router-ca -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d > "$output_file" 2>/dev/null; then
+                if [[ -s "$output_file" ]]; then
+                  echo "  Ingress CA extracted from $cluster_name using kubeconfig (fallback)"
+                  return 0
+                fi
+              fi
+              echo "  Failed to get ingress CA from $cluster_name"
+              return 1
+            else
+              # Use current context (hub cluster)
+              echo "  Using current context for hub cluster"
+              # Try to get ingress CA from router-ca secret
+              if oc get secret -n openshift-ingress-operator router-ca -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d > "$output_file" 2>/dev/null; then
+                if [[ -s "$output_file" ]]; then
+                  echo "  Ingress CA extracted from $cluster_name using current context"
+                  return 0
+                fi
+              fi
+              # Fallback: try to get from ingress operator config
+              if oc get secret -n openshift-ingress-operator router-ca -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d > "$output_file" 2>/dev/null; then
+                if [[ -s "$output_file" ]]; then
+                  echo "  Ingress CA extracted from $cluster_name using current context (fallback)"
+                  return 0
+                fi
+              fi
+              echo "  Failed to get ingress CA from $cluster_name"
+              return 1
+            fi
+          }
+          
           # Function to create combined CA bundle
           create_combined_ca_bundle() {
             local output_file="$1"
@@ -136,6 +185,16 @@ spec:
             echo "  Job will continue with managed cluster certificates only"
           fi
           
+          # Extract hub cluster ingress CA
+          echo "1b. Extracting hub cluster ingress CA..."
+          if extract_ingress_ca "hub" "$WORK_DIR/hub-ingress-ca.crt"; then
+            echo "  Hub cluster ingress CA extracted successfully"
+            echo "  Certificate size: $(wc -c < "$WORK_DIR/hub-ingress-ca.crt") bytes"
+          else
+            echo "  Failed to extract hub cluster ingress CA"
+            echo "  Job will continue without hub ingress CA"
+          fi
+          
           # Get managed clusters
           echo "2. Discovering managed clusters..."
           MANAGED_CLUSTERS=$(oc get managedclusters -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
@@ -153,6 +212,13 @@ spec:
             echo "  Added hub CA to bundle"
           else
             echo "  Hub CA not available, skipping"
+          fi
+          
+          if [[ -f "$WORK_DIR/hub-ingress-ca.crt" && -s "$WORK_DIR/hub-ingress-ca.crt" ]]; then
+            CA_FILES+=("$WORK_DIR/hub-ingress-ca.crt")
+            echo "  Added hub ingress CA to bundle"
+          else
+            echo "  Hub ingress CA not available, skipping"
           fi
           
           index=1
@@ -175,6 +241,15 @@ spec:
               echo "  Certificate size: $(wc -c < "$WORK_DIR/${cluster}-ca.crt") bytes"
             else
               echo "  Warning: Could not extract CA from $cluster, skipping..."
+            fi
+            
+            # Extract ingress CA from managed cluster
+            echo "3b.$index Extracting ingress CA from $cluster..."
+            if extract_ingress_ca "$cluster" "$WORK_DIR/${cluster}-ingress-ca.crt" "$KUBECONFIG_FILE"; then
+              CA_FILES+=("$WORK_DIR/${cluster}-ingress-ca.crt")
+              echo "  Ingress CA certificate size: $(wc -c < "$WORK_DIR/${cluster}-ingress-ca.crt") bytes"
+            else
+              echo "  Warning: Could not extract ingress CA from $cluster, skipping..."
             fi
             
             ((index++))
@@ -263,9 +338,9 @@ spec:
           
           echo ""
           echo "✅ ODF SSL certificate management completed successfully!"
-          echo "   - Hub cluster CA bundle: Updated"
+          echo "   - Hub cluster CA bundle: Updated (includes trusted CA + ingress CA)"
           echo "   - Hub cluster proxy: Configured"
-          echo "   - Managed clusters: Certificate data distributed"
+          echo "   - Managed clusters: Certificate data distributed (includes ingress CAs)"
           echo ""
           echo "This follows Red Hat ODF Disaster Recovery certificate management guidelines"
           echo "for secure SSL access across clusters in the regional DR setup."
