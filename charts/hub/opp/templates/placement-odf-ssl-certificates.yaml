@@ -23,3 +23,6 @@ spec:
     - key: vendor
       operator: In
       values: ["OpenShift"]
+    - key: name
+      operator: NotIn
+      values: ["local-cluster"]
