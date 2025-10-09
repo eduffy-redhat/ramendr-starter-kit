@@ -46,20 +46,35 @@ spec:
             
             if [[ -n "$kubeconfig" && -f "$kubeconfig" ]]; then
               # Use provided kubeconfig
+              echo "  Using kubeconfig: $kubeconfig"
               if oc --kubeconfig="$kubeconfig" get configmap -n openshift-config-managed trusted-ca-bundle -o jsonpath="{.data['ca-bundle\.crt']}" > "$output_file" 2>/dev/null; then
-                echo "  CA extracted from $cluster_name using kubeconfig"
-                return 0
+                if [[ -s "$output_file" ]]; then
+                  echo "  CA extracted from $cluster_name using kubeconfig"
+                  return 0
+                else
+                  echo "  CA file is empty from $cluster_name"
+                  return 1
+                fi
+              else
+                echo "  Failed to get trusted-ca-bundle from $cluster_name"
+                return 1
               fi
             else
               # Use current context (hub cluster)
+              echo "  Using current context for hub cluster"
               if oc get configmap -n openshift-config-managed trusted-ca-bundle -o jsonpath="{.data['ca-bundle\.crt']}" > "$output_file" 2>/dev/null; then
-                echo "  CA extracted from $cluster_name using current context"
-                return 0
+                if [[ -s "$output_file" ]]; then
+                  echo "  CA extracted from $cluster_name using current context"
+                  return 0
+                else
+                  echo "  CA file is empty from $cluster_name"
+                  return 1
+                fi
+              else
+                echo "  Failed to get trusted-ca-bundle from $cluster_name"
+                return 1
               fi
             fi
-            
-            echo "  Failed to extract CA from $cluster_name"
-            return 1
           }
           
           # Function to create combined CA bundle
@@ -132,7 +147,14 @@ spec:
           fi
           
           # Extract CA from each managed cluster
-          CA_FILES=("$WORK_DIR/hub-ca.crt")
+          CA_FILES=()
+          if [[ -f "$WORK_DIR/hub-ca.crt" && -s "$WORK_DIR/hub-ca.crt" ]]; then
+            CA_FILES+=("$WORK_DIR/hub-ca.crt")
+            echo "  Added hub CA to bundle"
+          else
+            echo "  Hub CA not available, skipping"
+          fi
+          
           index=1
           
           for cluster in $MANAGED_CLUSTERS; do
@@ -160,6 +182,11 @@ spec:
           
           # Create combined CA bundle
           echo "4. Creating combined CA bundle..."
+          echo "  CA files to combine: ${#CA_FILES[@]} files"
+          for ca_file in "${CA_FILES[@]}"; do
+            echo "    - $(basename "$ca_file") ($(wc -c < "$ca_file") bytes)"
+          done
+          
           if create_combined_ca_bundle "$WORK_DIR/combined-ca-bundle.crt" "${CA_FILES[@]}"; then
             echo "  Combined CA bundle created successfully"
             echo "  Bundle size: $(wc -c < "$WORK_DIR/combined-ca-bundle.crt") bytes"

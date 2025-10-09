@@ -40,8 +40,6 @@ spec:
                 app.kubernetes.io/component: ca-bundle
               annotations:
                 policy.open-cluster-management.io/description: "Combined CA bundle for ODF disaster recovery SSL access"
-            data:
-              ca-bundle.crt: ""
         - complianceType: musthave
           objectDefinition:
             apiVersion: config.openshift.io/v1
