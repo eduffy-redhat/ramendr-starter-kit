@@ -10,3 +10,5 @@ pattern-vault.init.bak
 super-linter.log
 .vscode
 .ansible
+/ocp-primary.yaml
+/ocp-secondary.yaml
