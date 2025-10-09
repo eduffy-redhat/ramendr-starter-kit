@@ -113,9 +113,12 @@ spec:
           echo "1. Extracting hub cluster CA..."
           if extract_cluster_ca "hub" "$WORK_DIR/hub-ca.crt"; then
             echo "  Hub cluster CA extracted successfully"
+            echo "  Certificate size: $(wc -c < "$WORK_DIR/hub-ca.crt") bytes"
+            echo "  First few lines:"
+            head -n 5 "$WORK_DIR/hub-ca.crt"
           else
             echo "  Failed to extract hub cluster CA"
-            exit 1
+            echo "  Job will continue with managed cluster certificates only"
           fi
           
           # Get managed clusters
@@ -147,8 +150,9 @@ spec:
             
             if extract_cluster_ca "$cluster" "$WORK_DIR/${cluster}-ca.crt" "$KUBECONFIG_FILE"; then
               CA_FILES+=("$WORK_DIR/${cluster}-ca.crt")
+              echo "  Certificate size: $(wc -c < "$WORK_DIR/${cluster}-ca.crt") bytes"
             else
-              echo "  Warning: Could not extract CA from $cluster, continuing..."
+              echo "  Warning: Could not extract CA from $cluster, skipping..."
             fi
             
             ((index++))
@@ -158,8 +162,12 @@ spec:
           echo "4. Creating combined CA bundle..."
           if create_combined_ca_bundle "$WORK_DIR/combined-ca-bundle.crt" "${CA_FILES[@]}"; then
             echo "  Combined CA bundle created successfully"
+            echo "  Bundle size: $(wc -c < "$WORK_DIR/combined-ca-bundle.crt") bytes"
+            echo "  First few lines of bundle:"
+            head -n 10 "$WORK_DIR/combined-ca-bundle.crt"
           else
-            echo "  Failed to create combined CA bundle"
+            echo "  Failed to create combined CA bundle - no certificates extracted"
+            echo "  Job will exit as no certificate data is available"
             exit 1
           fi
           
