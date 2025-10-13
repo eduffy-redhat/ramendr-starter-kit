@@ -40,6 +40,11 @@ spec:
                 app.kubernetes.io/component: ca-bundle
               annotations:
                 policy.open-cluster-management.io/description: "CA bundle for ODF disaster recovery SSL access"
+            data:
+              ca-bundle.crt: |
+                # Placeholder for ODF SSL certificate bundle
+                # This will be populated by the certificate extraction job
+                # with actual certificates from hub and managed clusters
         - complianceType: musthave
           objectDefinition:
             apiVersion: config.openshift.io/v1
