@@ -34,7 +34,7 @@ regionalDR:
               - 172.30.0.0/16
           platform:
             aws:
-              region: us-west-2
+              region: us-west-1
               userTags:
                 project: ValidatedPatterns
 
