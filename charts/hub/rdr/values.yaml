@@ -10,7 +10,7 @@ regionalDR:
           apiVersion: v1
           metadata:
             name: ocp-primary
-          baseDomain: gpfs-duffy.fusionaccess.devcluster.openshift.com
+          baseDomain: evand-test.devcluster.openshift.com
           controlPlane:
             name: master
             replicas: 3
@@ -49,7 +49,7 @@ regionalDR:
           apiVersion: v1
           metadata:
             name: ocp-secondary
-          baseDomain: gpfs-duffy.fusionaccess.devcluster.openshift.com
+          baseDomain: evand-test.devcluster.openshift.com
           controlPlane:
             name: master
             replicas: 3
