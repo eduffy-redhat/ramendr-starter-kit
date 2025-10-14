@@ -72,7 +72,7 @@ clusterGroup:
       chart: ensure-openshift-console-plugins
       chartVersion: 0.1.*
       extraValueFiles:
-        - '$patternref/overrides/values-console-plugins.yaml'
+        - '$patternref/overrides/values-console-plugins-spokes.yaml'
 
     golang-external-secrets:
       name: golang-external-secrets

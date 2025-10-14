@@ -1,0 +1,4 @@
+---
+ensureConsolePlugins:
+  - odf-console
+  - gitops-plugin

@@ -64,6 +64,15 @@ clusterGroup:
           jsonPointers:
             - /spec/loggingCA
 
+    ensure-openshift-console-plugins:
+      name: ensure-openshift-console-plugins
+      namespace: openshift-console
+      project: resilient
+      chart: ensure-openshift-console-plugins
+      chartVersion: 0.1.*
+      extraValueFiles:
+        - '$patternref/overrides/values-console-plugins-hub.yaml'
+
     opp-policy:
       name: opp-policy
       namespace: openshift
