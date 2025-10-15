@@ -1,0 +1,226 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: odf-dr-prerequisites-checker
+  namespace: open-cluster-management
+  labels:
+    app.kubernetes.io/name: odf-dr-prerequisites
+    app.kubernetes.io/component: health-check
+  annotations:
+    argocd.argoproj.io/hook: "PreSync"
+    argocd.argoproj.io/hook-delete-policy: "HookSucceeded"
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: prerequisites-checker
+        image: registry.redhat.io/openshift4/ose-cli:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          
+          echo "Starting ODF DR prerequisites check..."
+          
+          # Configuration
+          PRIMARY_CLUSTER="ocp-primary"
+          SECONDARY_CLUSTER="ocp-secondary"
+          KUBECONFIG_DIR="/tmp/kubeconfigs"
+          MAX_ATTEMPTS=60
+          SLEEP_INTERVAL=30
+          
+          # Create kubeconfig directory
+          mkdir -p "$KUBECONFIG_DIR"
+          
+          # Function to check if a condition is met
+          check_condition() {
+            local condition_name="$1"
+            local check_command="$2"
+            local cluster="$3"
+            
+            echo "Checking $condition_name on $cluster..."
+            if eval "$check_command"; then
+              echo "✅ $condition_name is healthy on $cluster"
+              return 0
+            else
+              echo "❌ $condition_name is not healthy on $cluster"
+              return 1
+            fi
+          }
+          
+          # Function to check Submariner health
+          check_submariner_health() {
+            local cluster="$1"
+            local kubeconfig="$2"
+            
+            echo "Checking Submariner health on $cluster..."
+            
+            # Check if Submariner is installed
+            if ! oc --kubeconfig="$kubeconfig" get crd submariners.submariner.io &>/dev/null; then
+              echo "Submariner CRD not found on $cluster"
+              return 1
+            fi
+            
+            # Check if Submariner is ready
+            local submariner_status=$(oc --kubeconfig="$kubeconfig" get submariner -n submariner-operator -o jsonpath='{.items[0].status.connectionStatus}' 2>/dev/null || echo "NotReady")
+            if [[ "$submariner_status" != "Connected" ]]; then
+              echo "Submariner connection status on $cluster: $submariner_status"
+              return 1
+            fi
+            
+            # Check Submariner gateway nodes
+            local gateway_nodes=$(oc --kubeconfig="$kubeconfig" get nodes -l submariner.io/gateway=true --no-headers 2>/dev/null | wc -l)
+            if [[ $gateway_nodes -eq 0 ]]; then
+              echo "No Submariner gateway nodes found on $cluster"
+              return 1
+            fi
+            
+            echo "Submariner is healthy on $cluster"
+            return 0
+          }
+          
+          # Function to check ODF health
+          check_odf_health() {
+            local cluster="$1"
+            local kubeconfig="$2"
+            
+            echo "Checking ODF health on $cluster..."
+            
+            # Check if ODF is installed
+            if ! oc --kubeconfig="$kubeconfig" get crd storageclusters.ocs.openshift.io &>/dev/null; then
+              echo "ODF CRD not found on $cluster"
+              return 1
+            fi
+            
+            # Check ODF storage cluster status
+            local storage_cluster_status=$(oc --kubeconfig="$kubeconfig" get storagecluster -n openshift-storage -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Unknown")
+            if [[ "$storage_cluster_status" != "Ready" ]]; then
+              echo "ODF storage cluster status on $cluster: $storage_cluster_status"
+              return 1
+            fi
+            
+            # Check ODF operator health
+            local odf_operator_status=$(oc --kubeconfig="$kubeconfig" get pods -n openshift-storage -l app=odf-operator --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+            if [[ $odf_operator_status -eq 0 ]]; then
+              echo "ODF operator not running on $cluster"
+              return 1
+            fi
+            
+            echo "ODF is healthy on $cluster"
+            return 0
+          }
+          
+          # Function to check CA configuration
+          check_ca_configuration() {
+            local cluster="$1"
+            local kubeconfig="$2"
+            
+            echo "Checking CA configuration on $cluster..."
+            
+            # Check if cluster-proxy-ca-bundle ConfigMap exists
+            if ! oc --kubeconfig="$kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config &>/dev/null; then
+              echo "cluster-proxy-ca-bundle ConfigMap not found on $cluster"
+              return 1
+            fi
+            
+            # Check if ConfigMap has certificate data
+            local ca_bundle_size=$(oc --kubeconfig="$kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null | wc -c)
+            if [[ $ca_bundle_size -lt 100 ]]; then
+              echo "CA bundle is too small or empty on $cluster (size: $ca_bundle_size)"
+              return 1
+            fi
+            
+            # Check if Proxy object is configured
+            local proxy_trusted_ca=$(oc --kubeconfig="$kubeconfig" get proxy cluster -o jsonpath='{.spec.trustedCA.name}' 2>/dev/null || echo "")
+            if [[ "$proxy_trusted_ca" != "cluster-proxy-ca-bundle" ]]; then
+              echo "Proxy trustedCA not configured correctly on $cluster (current: $proxy_trusted_ca)"
+              return 1
+            fi
+            
+            echo "CA configuration is correct on $cluster"
+            return 0
+          }
+          
+          # Function to download kubeconfig for a cluster
+          download_kubeconfig() {
+            local cluster="$1"
+            local kubeconfig_path="$KUBECONFIG_DIR/${cluster}-kubeconfig.yaml"
+            
+            echo "Downloading kubeconfig for $cluster..."
+            if oc get secret "${cluster}-import" -n "${cluster}" -o jsonpath='{.data.kubeconfig}' | base64 -d > "$kubeconfig_path"; then
+              echo "Kubeconfig downloaded for $cluster"
+              return 0
+            else
+              echo "Failed to download kubeconfig for $cluster"
+              return 1
+            fi
+          }
+          
+          # Main check loop
+          attempt=1
+          while [[ $attempt -le $MAX_ATTEMPTS ]]; do
+            echo "=== Prerequisites Check Attempt $attempt/$MAX_ATTEMPTS ==="
+            
+            all_checks_passed=true
+            
+            # Download kubeconfigs
+            if ! download_kubeconfig "$PRIMARY_CLUSTER"; then
+              echo "Failed to download kubeconfig for $PRIMARY_CLUSTER"
+              all_checks_passed=false
+            fi
+            
+            if ! download_kubeconfig "$SECONDARY_CLUSTER"; then
+              echo "Failed to download kubeconfig for $SECONDARY_CLUSTER"
+              all_checks_passed=false
+            fi
+            
+            if [[ "$all_checks_passed" == "true" ]]; then
+              # Check Submariner health
+              if ! check_submariner_health "$PRIMARY_CLUSTER" "$KUBECONFIG_DIR/${PRIMARY_CLUSTER}-kubeconfig.yaml"; then
+                all_checks_passed=false
+              fi
+              
+              if ! check_submariner_health "$SECONDARY_CLUSTER" "$KUBECONFIG_DIR/${SECONDARY_CLUSTER}-kubeconfig.yaml"; then
+                all_checks_passed=false
+              fi
+              
+              # Check ODF health
+              if ! check_odf_health "$PRIMARY_CLUSTER" "$KUBECONFIG_DIR/${PRIMARY_CLUSTER}-kubeconfig.yaml"; then
+                all_checks_passed=false
+              fi
+              
+              if ! check_odf_health "$SECONDARY_CLUSTER" "$KUBECONFIG_DIR/${SECONDARY_CLUSTER}-kubeconfig.yaml"; then
+                all_checks_passed=false
+              fi
+              
+              # Check CA configuration
+              if ! check_ca_configuration "$PRIMARY_CLUSTER" "$KUBECONFIG_DIR/${PRIMARY_CLUSTER}-kubeconfig.yaml"; then
+                all_checks_passed=false
+              fi
+              
+              if ! check_ca_configuration "$SECONDARY_CLUSTER" "$KUBECONFIG_DIR/${SECONDARY_CLUSTER}-kubeconfig.yaml"; then
+                all_checks_passed=false
+              fi
+            fi
+            
+            if [[ "$all_checks_passed" == "true" ]]; then
+              echo "🎉 All prerequisites are met! Proceeding with DR policy deployment..."
+              exit 0
+            else
+              echo "❌ Some prerequisites are not met. Waiting $SLEEP_INTERVAL seconds before retry..."
+              sleep $SLEEP_INTERVAL
+              ((attempt++))
+            fi
+          done
+          
+          echo "❌ Prerequisites check failed after $MAX_ATTEMPTS attempts"
+          echo "Please ensure:"
+          echo "1. Submariner is installed and connected on both clusters"
+          echo "2. ODF is installed and healthy on both clusters"
+          echo "3. CA certificates are properly configured on both clusters"
+          exit 1
+      serviceAccountName: odf-dr-prerequisites-checker
