@@ -9,12 +9,13 @@ metadata:
   annotations:
     argocd.argoproj.io/hook: "PreSync"
     argocd.argoproj.io/hook-delete-policy: "HookSucceeded"
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "1"
 spec:
+  backoffLimit: 3
   template:
     spec:
       serviceAccountName: odf-ssl-certificate-precheck
-      restartPolicy: OnFailure
+      restartPolicy: Never
       containers:
       - name: odf-ssl-precheck
         image: registry.redhat.io/openshift4/ose-cli:latest
@@ -149,8 +150,8 @@ spec:
                     
                     # Function to extract CA from a cluster
                     extract_ca_from_cluster() {
-                      local cluster_name=$1
-                      local kubeconfig_file=$2
+                      local cluster_name="${1:-}"
+                      local kubeconfig_file="${2:-}"
                       
                       echo "Extracting CA from cluster: $cluster_name"
                       
@@ -184,8 +185,8 @@ spec:
                     
                     # Function to extract ingress CA from a cluster
                     extract_ingress_ca_from_cluster() {
-                      local cluster_name=$1
-                      local kubeconfig_file=$2
+                      local cluster_name="${1:-}"
+                      local kubeconfig_file="${2:-}"
                       
                       echo "Extracting ingress CA from cluster: $cluster_name"
                       
