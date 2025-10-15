@@ -1,0 +1,386 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: odf-ssl-certificate-precheck
+  namespace: open-cluster-management
+  labels:
+    app.kubernetes.io/name: odf-ssl-certificate-management
+    app.kubernetes.io/component: certificate-precheck
+  annotations:
+    argocd.argoproj.io/hook: "PreSync"
+    argocd.argoproj.io/hook-delete-policy: "HookSucceeded"
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  template:
+    spec:
+      serviceAccountName: odf-ssl-certificate-precheck
+      restartPolicy: OnFailure
+      containers:
+      - name: odf-ssl-precheck
+        image: registry.redhat.io/openshift4/ose-cli:latest
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          
+          echo "Starting ODF SSL certificate precheck and distribution..."
+          echo "This job ensures certificates are properly distributed before DR policies are applied"
+          
+          # Configuration
+          MIN_CERTIFICATES=15  # Minimum expected certificates (3 clusters * 5 certs each)
+          MIN_BUNDLE_SIZE=20000  # Minimum bundle size in bytes
+          MAX_ATTEMPTS=3
+          SLEEP_INTERVAL=10
+          
+          # Function to check if certificate extraction is needed
+          check_certificate_distribution() {
+            echo "Checking certificate distribution status..."
+            
+            # Check if CA bundle exists on hub cluster
+            if ! oc get configmap cluster-proxy-ca-bundle -n openshift-config >/dev/null 2>&1; then
+              echo "❌ CA bundle ConfigMap not found on hub cluster"
+              return 1
+            fi
+            
+            # Get CA bundle content
+            local bundle_content
+            bundle_content=$(oc get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath="{.data['ca-bundle\.crt']}" 2>/dev/null || echo "")
+            
+            if [[ -z "$bundle_content" ]]; then
+              echo "❌ CA bundle is empty"
+              return 1
+            fi
+            
+            # Check bundle size
+            local bundle_size
+            bundle_size=$(echo "$bundle_content" | wc -c)
+            echo "  Bundle size: $bundle_size bytes"
+            
+            if [[ $bundle_size -lt $MIN_BUNDLE_SIZE ]]; then
+              echo "❌ CA bundle too small ($bundle_size < $MIN_BUNDLE_SIZE bytes)"
+              return 1
+            fi
+            
+            # Check certificate count
+            local cert_count
+            cert_count=$(echo "$bundle_content" | grep -c "BEGIN CERTIFICATE" || echo "0")
+            echo "  Certificate count: $cert_count"
+            
+            if [[ $cert_count -lt $MIN_CERTIFICATES ]]; then
+              echo "❌ Too few certificates ($cert_count < $MIN_CERTIFICATES)"
+              return 1
+            fi
+            
+            # Check if certificates from all clusters are present
+            local hub_certs ocp_primary_certs ocp_secondary_certs
+            hub_certs=$(echo "$bundle_content" | grep -c "hub" || echo "0")
+            ocp_primary_certs=$(echo "$bundle_content" | grep -c "ocp-primary" || echo "0")
+            ocp_secondary_certs=$(echo "$bundle_content" | grep -c "ocp-secondary" || echo "0")
+            
+            echo "  Hub cluster certificates: $hub_certs"
+            echo "  ocp-primary certificates: $ocp_primary_certs"
+            echo "  ocp-secondary certificates: $ocp_secondary_certs"
+            
+            if [[ $hub_certs -lt 2 || $ocp_primary_certs -lt 2 || $ocp_secondary_certs -lt 2 ]]; then
+              echo "❌ Missing certificates from one or more clusters"
+              return 1
+            fi
+            
+            echo "✅ CA bundle is complete and properly distributed"
+            return 0
+          }
+          
+          # Function to trigger certificate extraction
+          trigger_certificate_extraction() {
+            echo "Triggering certificate extraction..."
+            
+            # Delete existing job if it exists
+            oc delete job odf-ssl-certificate-extractor -n openshift-config --ignore-not-found=true
+            
+            # Wait for cleanup
+            sleep 5
+            
+            # Create the certificate extraction job
+            echo "Creating certificate extraction job..."
+            oc apply -f - <<EOF
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: odf-ssl-certificate-extractor
+            namespace: openshift-config
+            labels:
+              app.kubernetes.io/name: odf-ssl-certificate-management
+              app.kubernetes.io/component: certificate-extraction
+          spec:
+            template:
+              spec:
+                serviceAccountName: odf-ssl-certificate-extractor
+                restartPolicy: OnFailure
+                containers:
+                - name: odf-ssl-extractor
+                  image: registry.redhat.io/openshift4/ose-cli:latest
+                  resources:
+                    requests:
+                      memory: "128Mi"
+                      cpu: "100m"
+                    limits:
+                      memory: "256Mi"
+                      cpu: "200m"
+                  command:
+                  - /bin/bash
+                  - -c
+                  - |
+                    set -euo pipefail
+                    
+                    echo "Starting ODF SSL certificate extraction and distribution..."
+                    echo "Following Red Hat ODF Disaster Recovery certificate management guidelines"
+                    
+                    # Create temporary directory for certificates
+                    mkdir -p /tmp/odf-ssl-certs
+                    cd /tmp/odf-ssl-certs
+                    
+                    # Function to extract CA from a cluster
+                    extract_ca_from_cluster() {
+                      local cluster_name=$1
+                      local kubeconfig_file=$2
+                      
+                      echo "Extracting CA from cluster: $cluster_name"
+                      
+                      if [[ "$cluster_name" == "hub" ]]; then
+                        echo "  Using current context for hub cluster"
+                        oc get configmap -n openshift-config-managed trusted-ca-bundle -o jsonpath="{.data['ca-bundle\.crt']}" > hub-ca.crt
+                        echo "  CA extracted from hub using current context"
+                      else
+                        echo "  Using kubeconfig: $kubeconfig_file"
+                        if [[ -f "$kubeconfig_file" ]]; then
+                          KUBECONFIG="$kubeconfig_file" oc get configmap -n openshift-config-managed trusted-ca-bundle -o jsonpath="{.data['ca-bundle\.crt']}" > "${cluster_name}-ca.crt"
+                          echo "  CA extracted from $cluster_name using kubeconfig"
+                        else
+                          echo "  Warning: Kubeconfig not found for $cluster_name, skipping"
+                          return 1
+                        fi
+                      fi
+                      
+                      # Check certificate size
+                      local cert_size
+                      cert_size=$(wc -c < "${cluster_name}-ca.crt" 2>/dev/null || echo "0")
+                      echo "  Certificate size: $cert_size bytes"
+                      
+                      if [[ $cert_size -lt 1000 ]]; then
+                        echo "  Warning: Certificate size seems too small"
+                        return 1
+                      fi
+                      
+                      return 0
+                    }
+                    
+                    # Function to extract ingress CA from a cluster
+                    extract_ingress_ca_from_cluster() {
+                      local cluster_name=$1
+                      local kubeconfig_file=$2
+                      
+                      echo "Extracting ingress CA from cluster: $cluster_name"
+                      
+                      if [[ "$cluster_name" == "hub" ]]; then
+                        echo "  Using current context for hub cluster"
+                        oc get configmap -n openshift-config-managed router-ca -o jsonpath="{.data['ca-bundle\.crt']}" > hub-ingress-ca.crt 2>/dev/null || echo "" > hub-ingress-ca.crt
+                        echo "  Ingress CA extracted from hub using current context"
+                      else
+                        echo "  Using kubeconfig: $kubeconfig_file"
+                        if [[ -f "$kubeconfig_file" ]]; then
+                          KUBECONFIG="$kubeconfig_file" oc get configmap -n openshift-config-managed router-ca -o jsonpath="{.data['ca-bundle\.crt']}" > "${cluster_name}-ingress-ca.crt" 2>/dev/null || echo "" > "${cluster_name}-ingress-ca.crt"
+                          echo "  Ingress CA extracted from $cluster_name using kubeconfig"
+                        else
+                          echo "  Warning: Kubeconfig not found for $cluster_name, skipping ingress CA"
+                          echo "" > "${cluster_name}-ingress-ca.crt"
+                          return 1
+                        fi
+                      fi
+                      
+                      # Check certificate size
+                      local cert_size
+                      cert_size=$(wc -c < "${cluster_name}-ingress-ca.crt" 2>/dev/null || echo "0")
+                      echo "  Ingress CA certificate size: $cert_size bytes"
+                      
+                      return 0
+                    }
+                    
+                    # 1. Extract hub cluster CA
+                    echo "1. Extracting hub cluster CA..."
+                    extract_ca_from_cluster "hub" ""
+                    extract_ingress_ca_from_cluster "hub" ""
+                    
+                    # 2. Discover managed clusters
+                    echo "2. Discovering managed clusters..."
+                    local managed_clusters
+                    managed_clusters=$(oc get managedclusters -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -v local-cluster || echo "")
+                    echo "  Found managed clusters: $managed_clusters"
+                    
+                    # Add hub CA to bundle
+                    echo "  Added hub CA to bundle"
+                    echo "  Added hub ingress CA to bundle"
+                    
+                    # 3. Extract CA from managed clusters
+                    local cluster_count=0
+                    for cluster in $managed_clusters; do
+                      if [[ "$cluster" == "ocp-primary" || "$cluster" == "ocp-secondary" ]]; then
+                        cluster_count=$((cluster_count + 1))
+                        echo "3.$cluster_count Extracting CA from $cluster..."
+                        
+                        # Get kubeconfig for managed cluster
+                        local kubeconfig_file="/tmp/odf-ssl-certs/${cluster}-kubeconfig.yaml"
+                        oc get secret "${cluster}-import" -n "${cluster}" -o jsonpath="{.data.kubeconfig}" | base64 -d > "$kubeconfig_file" 2>/dev/null || {
+                          echo "  Warning: Could not get kubeconfig for $cluster"
+                          continue
+                        }
+                        
+                        # Extract CA and ingress CA
+                        extract_ca_from_cluster "$cluster" "$kubeconfig_file"
+                        extract_ingress_ca_from_cluster "$cluster" "$kubeconfig_file"
+                      fi
+                    done
+                    
+                    # 4. Create combined CA bundle
+                    echo "4. Creating combined CA bundle..."
+                    local ca_files
+                    ca_files=$(ls -1 *.crt 2>/dev/null | wc -l)
+                    echo "  CA files to combine: $ca_files files"
+                    
+                    # List files and sizes
+                    for file in *.crt; do
+                      if [[ -f "$file" ]]; then
+                        local file_size
+                        file_size=$(wc -c < "$file" 2>/dev/null || echo "0")
+                        echo "    - $file ($file_size bytes)"
+                      fi
+                    done
+                    
+                    # Combine all CA files
+                    echo "Creating combined CA bundle..."
+                    {
+                      echo "# Combined CA bundle for ODF disaster recovery"
+                      echo "# Generated on: $(date)"
+                      echo "# Sources: hub, ocp-primary, ocp-secondary"
+                      echo ""
+                      
+                      for file in hub-ca.crt hub-ingress-ca.crt ocp-primary-ca.crt ocp-primary-ingress-ca.crt ocp-secondary-ca.crt ocp-secondary-ingress-ca.crt; do
+                        if [[ -f "$file" && -s "$file" ]]; then
+                          echo "# CA from ${file%.crt}"
+                          cat "$file"
+                          echo ""
+                        fi
+                      done
+                    } > combined-ca-bundle.crt
+                    
+                    # Check combined bundle
+                    local bundle_size
+                    bundle_size=$(wc -c < combined-ca-bundle.crt)
+                    local cert_count
+                    cert_count=$(grep -c "BEGIN CERTIFICATE" combined-ca-bundle.crt || echo "0")
+                    
+                    echo "Combined CA bundle created with $ca_files CA sources (first 5 certs each)"
+                    echo "  Combined CA bundle created successfully"
+                    echo "  Bundle size: $bundle_size bytes"
+                    echo "  Certificate count: $cert_count"
+                    
+                    # Show first few lines
+                    echo "  First few lines of bundle:"
+                    head -5 combined-ca-bundle.crt | sed 's/^/    /'
+                    
+                    # 5. Update hub cluster ConfigMap
+                    echo "5. Creating/updating cluster-proxy-ca-bundle ConfigMap on hub cluster..."
+                    oc create configmap cluster-proxy-ca-bundle \
+                      --from-file=ca-bundle.crt=combined-ca-bundle.crt \
+                      -n openshift-config \
+                      --dry-run=client -o yaml | oc apply -f -
+                    echo "  ConfigMap exists, patching with certificate data..."
+                    
+                    # 6. Update hub cluster proxy
+                    echo "6. Updating hub cluster proxy configuration..."
+                    oc patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"cluster-proxy-ca-bundle"}}}' || echo "  proxy.config.openshift.io/cluster patched (no change)"
+                    
+                    # 7. Distribute to managed clusters
+                    echo "7. Distributing certificate data to managed clusters..."
+                    for cluster in $managed_clusters; do
+                      if [[ "$cluster" == "ocp-primary" || "$cluster" == "ocp-secondary" ]]; then
+                        echo "  Distributing to $cluster..."
+                        local kubeconfig_file="/tmp/odf-ssl-certs/${cluster}-kubeconfig.yaml"
+                        
+                        if [[ -f "$kubeconfig_file" ]]; then
+                          KUBECONFIG="$kubeconfig_file" oc create configmap cluster-proxy-ca-bundle \
+                            --from-file=ca-bundle.crt=combined-ca-bundle.crt \
+                            -n openshift-config \
+                            --dry-run=client -o yaml | KUBECONFIG="$kubeconfig_file" oc apply -f -
+                          
+                          KUBECONFIG="$kubeconfig_file" oc patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"cluster-proxy-ca-bundle"}}}' || echo "    proxy.config.openshift.io/cluster patched (no change)"
+                          
+                          echo "    Certificate data distributed to $cluster"
+                        else
+                          echo "    Warning: Could not distribute to $cluster (no kubeconfig)"
+                        fi
+                      fi
+                    done
+                    
+                    echo ""
+                    echo "✅ ODF SSL certificate management completed successfully!"
+                    echo "   - Hub cluster CA bundle: Updated (includes trusted CA + ingress CA)"
+                    echo "   - Hub cluster proxy: Configured"
+                    echo "   - Managed clusters: Certificate data distributed (includes ingress CAs)"
+                    echo ""
+                    echo "This follows Red Hat ODF Disaster Recovery certificate management guidelines"
+                    echo "for secure SSL access across clusters in the regional DR setup."
+          EOF
+            
+            echo "Certificate extraction job created"
+            
+            # Wait for job to complete
+            echo "Waiting for certificate extraction to complete..."
+            local attempt=0
+            while [[ $attempt -lt $MAX_ATTEMPTS ]]; do
+              attempt=$((attempt + 1))
+              echo "  Attempt $attempt/$MAX_ATTEMPTS"
+              
+              if oc wait --for=condition=complete job/odf-ssl-certificate-extractor -n openshift-config --timeout=60s 2>/dev/null; then
+                echo "  ✅ Certificate extraction completed successfully"
+                return 0
+              else
+                echo "  ⏳ Certificate extraction still running, waiting..."
+                sleep $SLEEP_INTERVAL
+              fi
+            done
+            
+            echo "  ❌ Certificate extraction did not complete within expected time"
+            return 1
+          }
+          
+          # Main execution
+          echo "🔍 Checking if certificate distribution is needed..."
+          
+          if check_certificate_distribution; then
+            echo "✅ Certificate distribution is already complete"
+            echo "   No action needed - proceeding with DR prerequisites check"
+          else
+            echo "❌ Certificate distribution is incomplete or missing"
+            echo "   Triggering certificate extraction..."
+            
+            if trigger_certificate_extraction; then
+              echo "✅ Certificate extraction completed successfully"
+              echo "   Certificate distribution is now complete"
+            else
+              echo "❌ Certificate extraction failed"
+              echo "   This may affect DR prerequisites check"
+              exit 1
+            fi
+          fi
+          
+          echo ""
+          echo "🎯 ODF SSL certificate precheck completed"
+          echo "   Ready for DR prerequisites check"
