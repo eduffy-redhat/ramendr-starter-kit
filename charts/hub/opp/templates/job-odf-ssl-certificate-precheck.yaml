@@ -114,13 +114,13 @@ spec:
               
               if [[ -n "$KUBECONFIG_FILE" && -f "$KUBECONFIG_FILE" ]]; then
                 # Check if ConfigMap exists and is valid
-                local configmap_exists=$(oc --kubeconfig="$KUBECONFIG_FILE" get configmap cluster-proxy-ca-bundle -n openshift-config &>/dev/null && echo "true" || echo "false")
-                local configmap_size=$(oc --kubeconfig="$KUBECONFIG_FILE" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null | wc -c || echo "0")
-                local proxy_configured=$(oc --kubeconfig="$KUBECONFIG_FILE" get proxy cluster -o jsonpath='{.spec.trustedCA.name}' 2>/dev/null || echo "")
-                local configmap_content=$(oc --kubeconfig="$KUBECONFIG_FILE" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
+                configmap_exists=$(oc --kubeconfig="$KUBECONFIG_FILE" get configmap cluster-proxy-ca-bundle -n openshift-config &>/dev/null && echo "true" || echo "false")
+                configmap_size=$(oc --kubeconfig="$KUBECONFIG_FILE" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null | wc -c || echo "0")
+                proxy_configured=$(oc --kubeconfig="$KUBECONFIG_FILE" get proxy cluster -o jsonpath='{.spec.trustedCA.name}' 2>/dev/null || echo "")
+                configmap_content=$(oc --kubeconfig="$KUBECONFIG_FILE" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
                 
                 # Check if ConfigMap contains placeholder content
-                local is_placeholder=false
+                is_placeholder=false
                 if [[ "$configmap_content" == *"Placeholder for ODF SSL certificate bundle"* ]] || [[ "$configmap_content" == *"This will be populated by the certificate extraction job"* ]]; then
                   is_placeholder=true
                   echo "  🔍 $cluster: ConfigMap contains placeholder content"
@@ -138,7 +138,7 @@ spec:
                   fi
                   
                   # Get the hub cluster's CA bundle to distribute
-                  local hub_ca_bundle=$(oc get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
+                  hub_ca_bundle=$(oc get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
                   
                   if [[ -n "$hub_ca_bundle" && ${#hub_ca_bundle} -gt 100 ]]; then
                     echo "  🔧 Remediating $cluster with hub CA bundle..."
@@ -198,7 +198,6 @@ spec:
             fi
             
             # Get CA bundle content
-            local bundle_content
             bundle_content=$(oc get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath="{.data['ca-bundle\.crt']}" 2>/dev/null || echo "")
             
             if [[ -z "$bundle_content" ]]; then
@@ -207,7 +206,6 @@ spec:
             fi
             
             # Check bundle size
-            local bundle_size
             bundle_size=$(echo "$bundle_content" | wc -c)
             echo "  Bundle size: $bundle_size bytes"
             
@@ -217,7 +215,6 @@ spec:
             fi
             
             # Check certificate count
-            local cert_count
             cert_count=$(echo "$bundle_content" | grep -c "BEGIN CERTIFICATE" || echo "0")
             echo "  Certificate count: $cert_count"
             
@@ -227,7 +224,6 @@ spec:
             fi
             
             # Check if certificates from all clusters are present
-            local hub_certs ocp_primary_certs ocp_secondary_certs
             hub_certs=$(echo "$bundle_content" | grep -c "hub" || echo "0")
             ocp_primary_certs=$(echo "$bundle_content" | grep -c "ocp-primary" || echo "0")
             ocp_secondary_certs=$(echo "$bundle_content" | grep -c "ocp-secondary" || echo "0")
@@ -367,7 +363,6 @@ spec:
                     
                     # 2. Discover managed clusters
                     echo "2. Discovering managed clusters..."
-                    local managed_clusters
                     managed_clusters=$(oc get managedclusters -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -v local-cluster || echo "")
                     echo "  Found managed clusters: $managed_clusters"
                     
@@ -376,14 +371,14 @@ spec:
                     echo "  Added hub ingress CA to bundle"
                     
                     # 3. Extract CA from managed clusters
-                    local cluster_count=0
+                    cluster_count=0
                     for cluster in $managed_clusters; do
                       if [[ "$cluster" == "ocp-primary" || "$cluster" == "ocp-secondary" ]]; then
                         cluster_count=$((cluster_count + 1))
                         echo "3.$cluster_count Extracting CA from $cluster..."
                         
                         # Get kubeconfig for managed cluster
-                        local kubeconfig_file="/tmp/odf-ssl-certs/${cluster}-kubeconfig.yaml"
+                        kubeconfig_file="/tmp/odf-ssl-certs/${cluster}-kubeconfig.yaml"
                         oc get secret "${cluster}-import" -n "${cluster}" -o jsonpath="{.data.kubeconfig}" | base64 -d > "$kubeconfig_file" 2>/dev/null || {
                           echo "  Warning: Could not get kubeconfig for $cluster"
                           continue
@@ -397,14 +392,12 @@ spec:
                     
                     # 4. Create combined CA bundle
                     echo "4. Creating combined CA bundle..."
-                    local ca_files
                     ca_files=$(ls -1 *.crt 2>/dev/null | wc -l)
                     echo "  CA files to combine: $ca_files files"
                     
                     # List files and sizes
                     for file in *.crt; do
                       if [[ -f "$file" ]]; then
-                        local file_size
                         file_size=$(wc -c < "$file" 2>/dev/null || echo "0")
                         echo "    - $file ($file_size bytes)"
                       fi
@@ -428,9 +421,7 @@ spec:
                     } > combined-ca-bundle.crt
                     
                     # Check combined bundle
-                    local bundle_size
                     bundle_size=$(wc -c < combined-ca-bundle.crt)
-                    local cert_count
                     cert_count=$(grep -c "BEGIN CERTIFICATE" combined-ca-bundle.crt || echo "0")
                     
                     echo "Combined CA bundle created with $ca_files CA sources (first 5 certs each)"
@@ -459,7 +450,7 @@ spec:
                     for cluster in $managed_clusters; do
                       if [[ "$cluster" == "ocp-primary" || "$cluster" == "ocp-secondary" ]]; then
                         echo "  Distributing to $cluster..."
-                        local kubeconfig_file="/tmp/odf-ssl-certs/${cluster}-kubeconfig.yaml"
+                        kubeconfig_file="/tmp/odf-ssl-certs/${cluster}-kubeconfig.yaml"
                         
                         if [[ -f "$kubeconfig_file" ]]; then
                           KUBECONFIG="$kubeconfig_file" oc create configmap cluster-proxy-ca-bundle \
@@ -490,7 +481,7 @@ spec:
             
             # Wait for job to complete
             echo "Waiting for certificate extraction to complete..."
-            local attempt=0
+            attempt=0
             while [[ $attempt -lt $MAX_ATTEMPTS ]]; do
               attempt=$((attempt + 1))
               echo "  Attempt $attempt/$MAX_ATTEMPTS"
