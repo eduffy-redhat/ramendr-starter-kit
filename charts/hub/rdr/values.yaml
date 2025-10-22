@@ -37,7 +37,6 @@ regionalDR:
               region: us-west-1
               userTags:
                 project: ValidatedPatterns
-
           publish: External
           sshKey: ""
           pullSecret: ""
@@ -73,10 +72,9 @@ regionalDR:
               - 172.31.0.0/16
           platform:
             aws:
-              region: us-east-2
+              region: us-east-1
               userTags:
                 project: ValidatedPatterns
-
           publish: External
           sshKey: ""
           pullSecret: ""
