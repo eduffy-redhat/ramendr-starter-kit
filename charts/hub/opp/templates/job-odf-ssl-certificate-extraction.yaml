@@ -205,18 +205,23 @@ spec:
           
           # Extract CA from each managed cluster
           CA_FILES=()
+          REQUIRED_CLUSTERS=("hub" "ocp-primary" "ocp-secondary")
+          EXTRACTED_CLUSTERS=()
+          
+          # Track hub cluster CA extraction
           if [[ -f "$WORK_DIR/hub-ca.crt" && -s "$WORK_DIR/hub-ca.crt" ]]; then
             CA_FILES+=("$WORK_DIR/hub-ca.crt")
+            EXTRACTED_CLUSTERS+=("hub")
             echo "  Added hub CA to bundle"
           else
-            echo "  Hub CA not available, skipping"
+            echo "  ❌ Hub CA not available - REQUIRED for DR setup"
           fi
           
           if [[ -f "$WORK_DIR/hub-ingress-ca.crt" && -s "$WORK_DIR/hub-ingress-ca.crt" ]]; then
             CA_FILES+=("$WORK_DIR/hub-ingress-ca.crt")
             echo "  Added hub ingress CA to bundle"
           else
-            echo "  Hub ingress CA not available, skipping"
+            echo "  Hub ingress CA not available, continuing without it"
           fi
           
           index=1
@@ -234,11 +239,14 @@ spec:
               KUBECONFIG_FILE="$WORK_DIR/${cluster}-kubeconfig.yaml"
             fi
             
+            cluster_ca_extracted=false
             if extract_cluster_ca "$cluster" "$WORK_DIR/${cluster}-ca.crt" "$KUBECONFIG_FILE"; then
               CA_FILES+=("$WORK_DIR/${cluster}-ca.crt")
+              EXTRACTED_CLUSTERS+=("$cluster")
+              cluster_ca_extracted=true
               echo "  Certificate size: $(wc -c < "$WORK_DIR/${cluster}-ca.crt") bytes"
             else
-              echo "  Warning: Could not extract CA from $cluster, skipping..."
+              echo "  ❌ Could not extract CA from $cluster - REQUIRED for DR setup"
             fi
             
             # Extract ingress CA from managed cluster
@@ -247,14 +255,45 @@ spec:
               CA_FILES+=("$WORK_DIR/${cluster}-ingress-ca.crt")
               echo "  Ingress CA certificate size: $(wc -c < "$WORK_DIR/${cluster}-ingress-ca.crt") bytes"
             else
-              echo "  Warning: Could not extract ingress CA from $cluster, skipping..."
+              echo "  Warning: Could not extract ingress CA from $cluster, continuing without it"
             fi
             
             ((index++))
           done
           
+          # Validate that we have CA material from all required clusters
+          echo "4. Validating CA extraction from required clusters..."
+          MISSING_CLUSTERS=()
+          for required_cluster in "${REQUIRED_CLUSTERS[@]}"; do
+            if [[ " ${EXTRACTED_CLUSTERS[@]} " =~ " ${required_cluster} " ]]; then
+              echo "  ✅ CA extracted from $required_cluster"
+            else
+              echo "  ❌ CA NOT extracted from $required_cluster"
+              MISSING_CLUSTERS+=("$required_cluster")
+            fi
+          done
+          
+          if [[ ${#MISSING_CLUSTERS[@]} -gt 0 ]]; then
+            echo ""
+            echo "❌ CRITICAL ERROR: CA material missing from required clusters:"
+            for missing in "${MISSING_CLUSTERS[@]}"; do
+              echo "   - $missing"
+            done
+            echo ""
+            echo "The ODF SSL certificate extractor job requires CA material from ALL three clusters:"
+            echo "   - hub (hub cluster)"
+            echo "   - ocp-primary (primary managed cluster)"  
+            echo "   - ocp-secondary (secondary managed cluster)"
+            echo ""
+            echo "Without CA material from all clusters, the DR setup will fail."
+            echo "Please ensure all clusters are accessible and have proper kubeconfigs."
+            echo ""
+            echo "Job will exit with error code 1."
+            exit 1
+          fi
+          
           # Create combined CA bundle
-          echo "4. Creating combined CA bundle..."
+          echo "5. Creating combined CA bundle..."
           echo "  CA files to combine: ${#CA_FILES[@]} files"
           for ca_file in "${CA_FILES[@]}"; do
             echo "    - $(basename "$ca_file") ($(wc -c < "$ca_file") bytes)"
@@ -272,7 +311,7 @@ spec:
           fi
           
           # Create or update ConfigMap on hub cluster
-          echo "5. Creating/updating cluster-proxy-ca-bundle ConfigMap on hub cluster..."
+          echo "6. Creating/updating cluster-proxy-ca-bundle ConfigMap on hub cluster..."
           
           # Check if ConfigMap exists
           if oc get configmap cluster-proxy-ca-bundle -n openshift-config >/dev/null 2>&1; then
@@ -296,13 +335,13 @@ spec:
           echo "  Certificate bundle contains CA certificates from hub and managed clusters"
           
           # Update hub cluster proxy
-          echo "6. Updating hub cluster proxy configuration..."
+          echo "7. Updating hub cluster proxy configuration..."
           oc patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"cluster-proxy-ca-bundle"}}}' || {
             echo "  Warning: Could not update hub cluster proxy"
           }
           
           # Distribute certificate data to managed clusters with retry logic
-          echo "7. Distributing certificate data to managed clusters..."
+          echo "8. Distributing certificate data to managed clusters..."
           DISTRIBUTION_ATTEMPTS=3
           DISTRIBUTION_SLEEP=10
           
@@ -359,8 +398,11 @@ spec:
           done
           
           # Verify distribution to managed clusters
-          echo "8. Verifying certificate distribution to managed clusters..."
+          echo "9. Verifying certificate distribution to managed clusters..."
           verification_failed=false
+          REQUIRED_VERIFICATION_CLUSTERS=("ocp-primary" "ocp-secondary")
+          VERIFIED_CLUSTERS=()
+          
           for cluster in $MANAGED_CLUSTERS; do
             if [[ "$cluster" == "local-cluster" ]]; then
               continue
@@ -377,6 +419,7 @@ spec:
               
               if [[ "$configmap_exists" == "true" && $configmap_size -gt 100 && "$proxy_configured" == "cluster-proxy-ca-bundle" ]]; then
                 echo "    ✅ $cluster: ConfigMap exists (${configmap_size} bytes), proxy configured"
+                VERIFIED_CLUSTERS+=("$cluster")
               else
                 echo "    ❌ $cluster: ConfigMap verification failed"
                 echo "      ConfigMap exists: $configmap_exists"
@@ -390,11 +433,43 @@ spec:
             fi
           done
           
+          # Check if all required clusters are verified
+          echo "10. Validating verification results..."
+          MISSING_VERIFICATION_CLUSTERS=()
+          for required_cluster in "${REQUIRED_VERIFICATION_CLUSTERS[@]}"; do
+            if [[ " ${VERIFIED_CLUSTERS[@]} " =~ " ${required_cluster} " ]]; then
+              echo "  ✅ $required_cluster: Certificate distribution verified"
+            else
+              echo "  ❌ $required_cluster: Certificate distribution NOT verified"
+              MISSING_VERIFICATION_CLUSTERS+=("$required_cluster")
+            fi
+          done
+          
+          if [[ ${#MISSING_VERIFICATION_CLUSTERS[@]} -gt 0 ]]; then
+            echo ""
+            echo "❌ CRITICAL ERROR: Certificate distribution verification failed for required clusters:"
+            for missing in "${MISSING_VERIFICATION_CLUSTERS[@]}"; do
+              echo "   - $missing"
+            done
+            echo ""
+            echo "The ODF SSL certificate extractor job requires successful certificate distribution"
+            echo "to ALL managed clusters (ocp-primary and ocp-secondary)."
+            echo ""
+            echo "Without proper certificate distribution, the DR setup will fail."
+            echo "Please check cluster connectivity and kubeconfig availability."
+            echo ""
+            echo "Job will exit with error code 1."
+            exit 1
+          fi
+          
           if [[ "$verification_failed" == "true" ]]; then
             echo ""
             echo "⚠️  Certificate distribution verification failed for some clusters"
             echo "   This may cause DR prerequisites check to fail"
             echo "   Manual intervention may be required"
+            echo ""
+            echo "Job will exit with error code 1."
+            exit 1
           else
             echo ""
             echo "✅ All managed clusters verified successfully"
