@@ -12,6 +12,7 @@ clusterGroup:
     - openshift-adp:
         operatorGroup: true
         targetNamespaces:
+          - openshift-adp
     - openshift-workload-availability:
         operatorGroup: true
         targetNamespaces:
