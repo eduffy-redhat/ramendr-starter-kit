@@ -88,9 +88,6 @@ clusterGroup:
       name: odf
       namespace: openshift-storage
       project: resilient
-      #repoURL: https://github.com/mhjacks/openshift-data-foundations-chart.git
-      #chartVersion: fix_sync_hooks
-      #path: "."
       chart: openshift-data-foundations
       chartVersion: 0.2.*
       extraValueFiles:
