@@ -530,6 +530,84 @@ spec:
           echo "  ramen-hub-operator-config updated successfully with base64-encoded CA bundle"
           echo "  This enables SSL access for discovered applications in ODF Disaster Recovery"
           
+          # Update ramen-dr-cluster-operator-config on managed clusters with base64-encoded CA bundle
+          echo "7c. Updating ramen-dr-cluster-operator-config on managed clusters..."
+          
+          # Base64 encode the combined CA bundle (already done, but ensure it's available)
+          CA_BUNDLE_BASE64=$(base64 -w 0 < "$WORK_DIR/combined-ca-bundle.crt" 2>/dev/null || base64 < "$WORK_DIR/combined-ca-bundle.crt" | tr -d '\n')
+          
+          for cluster in $MANAGED_CLUSTERS; do
+            if [[ "$cluster" == "local-cluster" ]]; then
+              continue
+            fi
+            
+            echo "  Processing cluster: $cluster"
+            
+            # Get kubeconfig for the cluster
+            KUBECONFIG_FILE=""
+            if oc get secret -n "$cluster" -o name | grep -E "(admin-kubeconfig|kubeconfig)" | head -1 | xargs -I {} oc get {} -n "$cluster" -o jsonpath='{.data.kubeconfig}' | base64 -d > "$WORK_DIR/${cluster}-kubeconfig.yaml" 2>/dev/null; then
+              KUBECONFIG_FILE="$WORK_DIR/${cluster}-kubeconfig.yaml"
+            fi
+            
+            if [[ -n "$KUBECONFIG_FILE" && -f "$KUBECONFIG_FILE" ]]; then
+              # Check if ramen-dr-cluster-operator-config exists
+              if oc --kubeconfig="$KUBECONFIG_FILE" get configmap ramen-dr-cluster-operator-config -n openshift-dr-system &>/dev/null; then
+                echo "    ConfigMap exists, updating ramen_manager_config.yaml with caCertificates..."
+                
+                # Get existing ramen_manager_config.yaml content
+                EXISTING_YAML=$(oc --kubeconfig="$KUBECONFIG_FILE" get configmap ramen-dr-cluster-operator-config -n openshift-dr-system -o jsonpath='{.data.ramen_manager_config\.yaml}' 2>/dev/null || echo "")
+                
+                # Create updated YAML with caCertificates
+                if [[ -n "$EXISTING_YAML" ]]; then
+                  # Create a temporary YAML file with the update
+                  echo "$EXISTING_YAML" > "$WORK_DIR/${cluster}-existing-ramen-config.yaml"
+                  
+                  # Add or update caCertificates in the YAML
+                  # Check if caCertificates already exists
+                  if grep -q "^caCertificates:" "$WORK_DIR/${cluster}-existing-ramen-config.yaml"; then
+                    # Update existing caCertificates
+                    if command -v yq &>/dev/null; then
+                      yq eval ".caCertificates = \"$CA_BUNDLE_BASE64\"" -i "$WORK_DIR/${cluster}-existing-ramen-config.yaml"
+                    else
+                      # Fallback: use sed to update the line
+                      sed -i "s/^caCertificates:.*/caCertificates: $CA_BUNDLE_BASE64/" "$WORK_DIR/${cluster}-existing-ramen-config.yaml"
+                    fi
+                  else
+                    # Add new caCertificates at the end
+                    echo "caCertificates: $CA_BUNDLE_BASE64" >> "$WORK_DIR/${cluster}-existing-ramen-config.yaml"
+                  fi
+                  
+                  UPDATED_YAML=$(cat "$WORK_DIR/${cluster}-existing-ramen-config.yaml")
+                else
+                  # No existing YAML, create new one with just caCertificates
+                  UPDATED_YAML="caCertificates: $CA_BUNDLE_BASE64"
+                fi
+                
+                # Create patch file for ConfigMap update
+                echo "data:" > "$WORK_DIR/${cluster}-ramen-patch.yaml"
+                echo "  ramen_manager_config.yaml: |" >> "$WORK_DIR/${cluster}-ramen-patch.yaml"
+                echo "$UPDATED_YAML" | sed 's/^/    /' >> "$WORK_DIR/${cluster}-ramen-patch.yaml"
+                
+                # Patch the ConfigMap with updated YAML
+                oc --kubeconfig="$KUBECONFIG_FILE" patch configmap ramen-dr-cluster-operator-config -n openshift-dr-system \
+                  --type=merge \
+                  --patch-file="$WORK_DIR/${cluster}-ramen-patch.yaml" || {
+                  echo "    Warning: Could not patch ramen-dr-cluster-operator-config on $cluster"
+                }
+                
+                rm -f "$WORK_DIR/${cluster}-existing-ramen-config.yaml" "$WORK_DIR/${cluster}-ramen-patch.yaml"
+                echo "    ✅ ramen-dr-cluster-operator-config updated successfully on $cluster"
+              else
+                echo "    ⚠️  Warning: ramen-dr-cluster-operator-config not found on $cluster - it may not be deployed yet"
+                echo "     Configuration changes will be applied when the ConfigMap is created"
+              fi
+            else
+              echo "    ❌ Could not get kubeconfig for $cluster - skipping ConfigMap update"
+            fi
+          done
+          
+          echo "  ✅ Completed ramen-dr-cluster-operator-config updates on managed clusters"
+          
           # Distribute certificate data to managed clusters with retry logic
           echo "8. Distributing certificate data to managed clusters..."
           DISTRIBUTION_ATTEMPTS=3
@@ -670,7 +748,8 @@ spec:
           echo "   - Hub cluster CA bundle: Updated (includes trusted CA + ingress CA)"
           echo "   - Hub cluster proxy: Configured"
           echo "   - Managed clusters: ramenddr-cluster-operator pods restarted"
-          echo "   - ramen-hub-operator-config: Updated with base64-encoded CA bundle"
+          echo "   - ramen-hub-operator-config: Updated with base64-encoded CA bundle (hub cluster)"
+          echo "   - ramen-dr-cluster-operator-config: Updated with base64-encoded CA bundle (managed clusters)"
           echo "   - Managed clusters: Certificate data distributed (includes ingress CAs)"
           echo ""
           echo "This follows Red Hat ODF Disaster Recovery certificate management guidelines"
