@@ -465,6 +465,96 @@ spec:
             echo "  Warning: Could not update hub cluster proxy"
           }
           
+          # Restart ramenddr-cluster-operator pods on managed clusters before updating configmap
+          echo "7a. Restarting ramenddr-cluster-operator pods on managed clusters..."
+          
+          MANAGED_CLUSTERS=$(oc get managedclusters -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+          
+          for cluster in $MANAGED_CLUSTERS; do
+            if [[ "$cluster" == "local-cluster" ]]; then
+              continue
+            fi
+            
+            echo "  Processing cluster: $cluster"
+            
+            # Get kubeconfig for the cluster
+            KUBECONFIG_FILE=""
+            if oc get secret -n "$cluster" -o name | grep -E "(admin-kubeconfig|kubeconfig)" | head -1 | xargs -I {} oc get {} -n "$cluster" -o jsonpath='{.data.kubeconfig}' | base64 -d > "/tmp/${cluster}-kubeconfig.yaml" 2>/dev/null; then
+              KUBECONFIG_FILE="/tmp/${cluster}-kubeconfig.yaml"
+            fi
+            
+            if [[ -n "$KUBECONFIG_FILE" && -f "$KUBECONFIG_FILE" ]]; then
+              # Find ramenddr-cluster-operator pods
+              RAMEN_PODS=$(oc --kubeconfig="$KUBECONFIG_FILE" get pods -n openshift-dr-system -l app=ramenddr-cluster-operator -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+              
+              if [[ -n "$RAMEN_PODS" ]]; then
+                echo "    Found ramenddr-cluster-operator pods: $RAMEN_PODS"
+                
+                for pod in $RAMEN_PODS; do
+                  echo "    Deleting pod $pod to trigger restart..."
+                  oc --kubeconfig="$KUBECONFIG_FILE" delete pod "$pod" -n openshift-dr-system --ignore-not-found=true || {
+                    echo "    Warning: Could not delete pod $pod"
+                  }
+                done
+                
+                # Wait for pods to be deleted
+                echo "    Waiting for pods to be terminated..."
+                for pod in $RAMEN_PODS; do
+                  oc --kubeconfig="$KUBECONFIG_FILE" wait --for=delete pod/"$pod" -n openshift-dr-system --timeout=60s 2>/dev/null || true
+                done
+                
+                # Wait for new pods to be running
+                echo "    Waiting for new ramenddr-cluster-operator pods to be running..."
+                MAX_WAIT_ATTEMPTS=30
+                WAIT_INTERVAL=10
+                attempt=0
+                
+                while [[ $attempt -lt $MAX_WAIT_ATTEMPTS ]]; do
+                  attempt=$((attempt + 1))
+                  
+                  NEW_PODS=$(oc --kubeconfig="$KUBECONFIG_FILE" get pods -n openshift-dr-system -l app=ramenddr-cluster-operator -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+                  ALL_RUNNING=true
+                  
+                  if [[ -n "$NEW_PODS" ]]; then
+                    for pod in $NEW_PODS; do
+                      POD_STATUS=$(oc --kubeconfig="$KUBECONFIG_FILE" get pod "$pod" -n openshift-dr-system -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+                      
+                      if [[ "$POD_STATUS" != "Running" ]]; then
+                        ALL_RUNNING=false
+                        break
+                      fi
+                    done
+                    
+                    if [[ "$ALL_RUNNING" == "true" ]]; then
+                      echo "    ✅ All ramenddr-cluster-operator pods are running on $cluster: $NEW_PODS"
+                      break
+                    else
+                      echo "    ⏳ Waiting for pods to be running (attempt $attempt/$MAX_WAIT_ATTEMPTS)"
+                    fi
+                  else
+                    echo "    ⏳ Waiting for pods to appear (attempt $attempt/$MAX_WAIT_ATTEMPTS)"
+                  fi
+                  
+                  if [[ $attempt -lt $MAX_WAIT_ATTEMPTS ]]; then
+                    sleep $WAIT_INTERVAL
+                  fi
+                done
+                
+                if [[ $attempt -ge $MAX_WAIT_ATTEMPTS ]]; then
+                  echo "    ⚠️  Warning: ramenddr-cluster-operator pods did not become ready within expected time on $cluster"
+                  echo "     The pods may still be starting - configuration changes will be applied when ready"
+                fi
+              else
+                echo "    ⚠️  Warning: ramenddr-cluster-operator pods not found on $cluster - they may not be deployed yet"
+                echo "     Configuration changes will be applied when the pods start"
+              fi
+            else
+              echo "    ❌ Could not get kubeconfig for $cluster - skipping pod restart"
+            fi
+          done
+          
+          echo "  ✅ Completed ramenddr-cluster-operator pod restarts on managed clusters"
+          
           # Update ramen-hub-operator-config with base64-encoded CA bundle
           echo "7b. Updating ramen-hub-operator-config in openshift-operators namespace..."
           
@@ -528,62 +618,6 @@ spec:
           
           echo "  ramen-hub-operator-config updated successfully with base64-encoded CA bundle"
           echo "  This enables SSL access for discovered applications in ODF Disaster Recovery"
-          
-          # Restart ramen-hub-operator pod to pick up the new configuration
-          echo "7c. Restarting ramen-hub-operator pod to apply new CA certificates..."
-          
-          # Find the ramen-hub-operator pod
-          RAMEN_POD=$(oc get pod -n openshift-operators -l app=ramen-hub-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-          
-          if [[ -n "$RAMEN_POD" ]]; then
-            echo "  Found ramen-hub-operator pod: $RAMEN_POD"
-            echo "  Deleting pod to trigger restart..."
-            
-            oc delete pod "$RAMEN_POD" -n openshift-operators --ignore-not-found=true || {
-              echo "  Warning: Could not delete ramen-hub-operator pod"
-            }
-            
-            # Wait for pod to be deleted
-            echo "  Waiting for pod to be terminated..."
-            oc wait --for=delete pod/"$RAMEN_POD" -n openshift-operators --timeout=60s 2>/dev/null || true
-            
-            # Wait for new pod to be running
-            echo "  Waiting for new ramen-hub-operator pod to be running..."
-            MAX_WAIT_ATTEMPTS=30
-            WAIT_INTERVAL=10
-            attempt=0
-            
-            while [[ $attempt -lt $MAX_WAIT_ATTEMPTS ]]; do
-              attempt=$((attempt + 1))
-              
-              NEW_RAMEN_POD=$(oc get pod -n openshift-operators -l app=ramen-hub-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-              
-              if [[ -n "$NEW_RAMEN_POD" && "$NEW_RAMEN_POD" != "$RAMEN_POD" ]]; then
-                POD_STATUS=$(oc get pod "$NEW_RAMEN_POD" -n openshift-operators -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-                
-                if [[ "$POD_STATUS" == "Running" ]]; then
-                  echo "  ✅ New ramen-hub-operator pod is running: $NEW_RAMEN_POD"
-                  break
-                else
-                  echo "  ⏳ New pod status: $POD_STATUS (attempt $attempt/$MAX_WAIT_ATTEMPTS)"
-                fi
-              else
-                echo "  ⏳ Waiting for new pod to appear (attempt $attempt/$MAX_WAIT_ATTEMPTS)"
-              fi
-              
-              if [[ $attempt -lt $MAX_WAIT_ATTEMPTS ]]; then
-                sleep $WAIT_INTERVAL
-              fi
-            done
-            
-            if [[ $attempt -ge $MAX_WAIT_ATTEMPTS ]]; then
-              echo "  ⚠️  Warning: New ramen-hub-operator pod did not become ready within expected time"
-              echo "   The pod may still be starting - configuration changes will be applied when it's ready"
-            fi
-          else
-            echo "  ⚠️  Warning: ramen-hub-operator pod not found - it may not be deployed yet"
-            echo "   Configuration changes will be applied when the pod starts"
-          fi
           
           echo "8. Distributing certificate data to managed clusters..."
           DISTRIBUTION_ATTEMPTS=3
@@ -717,8 +751,8 @@ spec:
           echo "✅ ODF SSL certificate management completed successfully!"
           echo "   - Hub cluster CA bundle: Updated (includes trusted CA + ingress CA)"
           echo "   - Hub cluster proxy: Configured"
+          echo "   - Managed clusters: ramenddr-cluster-operator pods restarted"
           echo "   - ramen-hub-operator-config: Updated with base64-encoded CA bundle"
-          echo "   - ramen-hub-operator pod: Restarted to apply new CA certificates"
           echo "   - Managed clusters: Certificate data distributed (includes ingress CAs)"
           echo ""
           echo "This follows Red Hat ODF Disaster Recovery certificate management guidelines"
