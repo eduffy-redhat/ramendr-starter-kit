@@ -352,11 +352,14 @@ else
   echo "  Applying helm template to namespace: $VM_NAMESPACE"
   echo "  Rendering and applying helm template..."
   
-  # Pipe helm template directly to oc apply
+  # Pipe helm template directly to oc apply, and also capture the template output to a file
   # The --set namespace ensures resources have the namespace, and -n flag ensures they're applied to the correct namespace
   APPLY_OUTPUT=$(helm template edge-gitops-vms "$HELM_CHART_URL" $VALUES_ARG --set namespace="$VM_NAMESPACE" 2>&1 | \
+    tee "$WORK_DIR/helm-template-applied.yaml" | \
     oc apply -n "$VM_NAMESPACE" -f- 2>&1)
   APPLY_EXIT_CODE=$?
+  
+  echo "  ✅ Helm template output saved to: $WORK_DIR/helm-template-applied.yaml"
   
   if [[ $APPLY_EXIT_CODE -eq 0 ]]; then
     echo "  ✅ Helm template applied successfully to namespace $VM_NAMESPACE"
