@@ -16,7 +16,7 @@ spec:
     name: 2m-vm
   failoverCluster: ocp-primary
   kubeObjectProtection:
-    captureInterval: 5m0s
+    captureInterval: 2m0s
     kubeObjectSelector:
       matchExpressions:
       - key: drprotection
