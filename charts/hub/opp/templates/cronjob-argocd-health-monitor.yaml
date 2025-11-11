@@ -1,0 +1,34 @@
+{{- if .Values.argocdHealthMonitor.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: argocd-health-monitor
+  namespace: open-cluster-management
+  labels:
+    app.kubernetes.io/name: argocd-health-monitor
+    app.kubernetes.io/component: cronjob
+  annotations:
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  schedule: "*/15 * * * *"  # Run every 15 minutes
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 20  # Increased for long cluster startup times
+      activeDeadlineSeconds: 6000  # 100 minutes - allows for 90 minutes of script execution plus buffer
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: argocd-health-monitor
+            image: registry.redhat.io/openshift4/ose-cli:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+{{ .Files.Get "scripts/argocd-health-monitor-cron.sh" | indent 14 }}
+          serviceAccountName: argocd-health-monitor
+{{- end }}

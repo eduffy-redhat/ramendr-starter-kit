@@ -1,0 +1,86 @@
+regionalDR:
+  - name: resilient # Matches with ClusterSet
+    globalnetEnabled: false # Support for overlapping CIDR
+    clusters: # Pair of clusters, make sure to create each in a different region
+      primary:
+        name: ocp-primary
+        clusterGroup: resilient
+        version: 4.18.7
+        install_config:
+          apiVersion: v1
+          metadata:
+            name: ocp-primary
+          baseDomain: aws.validatedpatterns.io
+          controlPlane:
+            name: master
+            replicas: 3
+            platform:
+              aws:
+                type: m5.4xlarge
+          compute:
+            - name: worker
+              replicas: 3
+              platform:
+                aws:
+                  type: m5.metal
+          networking:
+            clusterNetwork:
+              - cidr: 10.128.0.0/14
+                hostPrefix: 23
+            machineNetwork:
+              - cidr: 10.0.0.0/16
+            networkType: OVNKubernetes
+            serviceNetwork:
+              - 172.30.0.0/16
+          platform:
+            aws:
+              region: us-west-1
+              userTags:
+                project: ValidatedPatterns
+          publish: External
+          sshKey: ""
+          pullSecret: ""
+      secondary:
+        name: ocp-secondary
+        clusterGroup: resilient
+        version: 4.18.7
+        install_config:
+          apiVersion: v1
+          metadata:
+            name: ocp-secondary
+          baseDomain: aws.validatedpatterns.io
+          controlPlane:
+            name: master
+            replicas: 3
+            platform:
+              aws:
+                type: m5.4xlarge
+          compute:
+            - name: worker
+              replicas: 3
+              platform:
+                aws:
+                  type: m5.metal
+          networking:
+            clusterNetwork:
+              - cidr: 10.132.0.0/14
+                hostPrefix: 23
+            machineNetwork:
+              - cidr: 10.1.0.0/16
+            networkType: OVNKubernetes
+            serviceNetwork:
+              - 172.31.0.0/16
+          platform:
+            aws:
+              region: us-east-1
+              userTags:
+                project: ValidatedPatterns
+          publish: External
+          sshKey: ""
+          pullSecret: ""
+    # List of sync policy intervals: RPO should be larger than the sync time.
+    # If your sync process takes 3 mins, the interval should be at least 4-5 mins.
+    drpolicies:
+      - interval: 2m
+        vmSupport: true
+      - interval: 2m
