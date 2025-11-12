@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: odf-ssl-extractor
-        image: registry.redhat.io/openshift4/ose-cli:latest
+        image: quay.io/validatedpatterns/utility-container:latest
         resources:
           requests:
             memory: "512Mi"
