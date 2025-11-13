@@ -108,6 +108,11 @@ clusterGroup:
       path: charts/hub/rdr
       annotations:
         argocd.argoproj.io/sync-wave: "10"
+      syncPolicy:
+        automated:
+          selfHeal: true
+        syncOptions:
+          - RespectIgnoreDifferences=true
       ignoreDifferences:
         # Prevent ArgoCD from pruning dynamically created OCM resources
         # These resources are created by OCM operators and should never be pruned
