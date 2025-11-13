@@ -16,7 +16,7 @@ metadata:
     app.kubernetes.io/component: health-check
     drpolicy: {{ $name }}
   annotations:
-    argocd.argoproj.io/sync-wave: "7"
+    argocd.argoproj.io/sync-wave: "8"
 spec:
   backoffLimit: 50
   activeDeadlineSeconds: 14400

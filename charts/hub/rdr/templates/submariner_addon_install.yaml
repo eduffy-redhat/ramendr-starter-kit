@@ -15,7 +15,7 @@ metadata:
   name: submariner-broker
   namespace: {{ .name }}-broker
   annotations:
-    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-wave: "6"
 spec: {}
 #  globalnetEnabled: {{ $globalnetEnabled | default false }}
 
@@ -29,7 +29,7 @@ metadata:
   name: submariner
   namespace: {{ $cluster.name }}
   annotations:
-    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-wave: "6"
 spec:
   installNamespace: submariner-operator
 
@@ -40,7 +40,7 @@ metadata:
   name: submariner
   namespace: {{ $cluster.name }}
   annotations:
-    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-wave: "6"
 spec:
   gatewayConfig:
     gateways: 1
