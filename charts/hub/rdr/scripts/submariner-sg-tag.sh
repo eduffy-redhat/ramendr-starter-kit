@@ -130,21 +130,85 @@ get_aws_credentials() {
     return 1
   fi
   
-  # Get AWS region from managed cluster's infrastructure (using managed cluster kubeconfig)
-  aws_region=$(oc --kubeconfig="$kubeconfig" get infrastructure cluster -o jsonpath='{.status.platformStatus.aws.region}' 2>/dev/null || echo "")
+  # Try multiple methods to get AWS region
+  aws_region=""
   
+  # Method 1: Try to get from ClusterDeployment on hub cluster
+  echo "  Trying to get region from ClusterDeployment..."
+  aws_region=$(oc get clusterdeployment "$cluster" -n "$cluster" -o jsonpath='{.spec.platform.aws.region}' 2>/dev/null || echo "")
+  
+  # Method 2: Try to get from install-config secret on hub cluster
   if [[ -z "$aws_region" ]]; then
-    echo "  ⚠️  Could not get AWS region from infrastructure, will try to detect from cluster info"
-    # Try to get region from managed cluster info on hub
+    echo "  Trying to get region from install-config secret..."
+    local install_config_secret="${cluster}-cluster-install-config"
+    if oc get secret "$install_config_secret" -n "$cluster" &>/dev/null; then
+      aws_region=$(oc get secret "$install_config_secret" -n "$cluster" -o jsonpath='{.data.install-config\.yaml}' 2>/dev/null | \
+        base64 -d 2>/dev/null | grep -E '^\s*region:' | awk '{print $2}' | tr -d '"' || echo "")
+    fi
+  fi
+  
+  # Method 3: Try to get from managed cluster's infrastructure (using managed cluster kubeconfig)
+  if [[ -z "$aws_region" ]]; then
+    echo "  Trying to get region from managed cluster infrastructure..."
+    aws_region=$(oc --kubeconfig="$kubeconfig" get infrastructure cluster -o jsonpath='{.status.platformStatus.aws.region}' 2>/dev/null || echo "")
+  fi
+  
+  # Method 4: Try to get from ManagedClusterInfo on hub
+  if [[ -z "$aws_region" ]]; then
+    echo "  Trying to get region from ManagedClusterInfo..."
     aws_region=$(oc get managedclusterinfo "$cluster" -n "$cluster" -o jsonpath='{.status.clusterClaims[?(@.name=="region.open-cluster-management.io")].value}' 2>/dev/null || echo "")
   fi
   
+  # Method 5: Try to get from infrastructure spec (fallback)
   if [[ -z "$aws_region" ]]; then
-    echo "  ❌ Could not determine AWS region"
+    echo "  Trying to get region from infrastructure spec..."
+    aws_region=$(oc --kubeconfig="$kubeconfig" get infrastructure cluster -o jsonpath='{.spec.platformSpec.aws.region}' 2>/dev/null || echo "")
+  fi
+  
+  # Method 6: Try to detect from AWS using credentials (if we have them and have infra_name)
+  # This requires the infrastructure name to search for cluster resources
+  if [[ -z "$aws_region" && -n "$aws_access_key" && -n "$aws_secret_key" ]]; then
+    echo "  Trying to detect region from AWS resources..."
+    # Get infrastructure name first (we'll need it to find cluster resources)
+    local temp_infra_name=$(oc --kubeconfig="$kubeconfig" get infrastructure cluster -o jsonpath='{.status.infrastructureName}' 2>/dev/null || echo "")
+    
+    if [[ -n "$temp_infra_name" ]]; then
+      # Temporarily set credentials
+      export AWS_ACCESS_KEY_ID="$aws_access_key"
+      export AWS_SECRET_ACCESS_KEY="$aws_secret_key"
+      
+      # Get list of all available regions
+      local available_regions=$(aws ec2 describe-regions --query 'Regions[].RegionName' --output text 2>/dev/null || echo "")
+      
+      if [[ -n "$available_regions" ]]; then
+        # Search for VPCs or security groups tagged with the cluster infrastructure name
+        for test_region in $available_regions; do
+          export AWS_DEFAULT_REGION="$test_region"
+          # Look for VPCs with tags matching the cluster infrastructure name
+          local vpc_found=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=${temp_infra_name}*" \
+            --query 'Vpcs[0].VpcId' \
+            --output text 2>/dev/null || echo "")
+          
+          if [[ -n "$vpc_found" && "$vpc_found" != "None" ]]; then
+            aws_region="$test_region"
+            echo "  Found cluster VPC in region: $test_region"
+            break
+          fi
+        done
+      fi
+      
+      unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
+    fi
+  fi
+  
+  if [[ -z "$aws_region" ]]; then
+    echo "  ❌ Could not determine AWS region using any method"
+    echo "  Tried: ClusterDeployment, install-config secret, infrastructure status, ManagedClusterInfo, infrastructure spec, AWS detection"
     return 1
   fi
   
-  echo "  ✅ Successfully retrieved AWS credentials (region: $aws_region)"
+  echo "  ✅ Successfully determined AWS region: $aws_region"
   
   # Export AWS credentials
   export AWS_ACCESS_KEY_ID="$aws_access_key"
