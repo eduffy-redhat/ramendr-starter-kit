@@ -87,7 +87,8 @@ get_infrastructure_name() {
   local cluster="$1"
   local kubeconfig="$2"
   
-  echo "  Getting infrastructure name for cluster $cluster..."
+  # Send debug messages to stderr so they don't interfere with stdout output
+  echo "  Getting infrastructure name for cluster $cluster..." >&2
   
   local infra_name=""
   
@@ -101,19 +102,19 @@ get_infrastructure_name() {
   
   # Method 2: Try to get from infrastructure status on managed cluster
   if [[ -z "$infra_name" ]]; then
-    echo "  Trying to get infrastructure name from managed cluster infrastructure status..."
+    echo "  Trying to get infrastructure name from managed cluster infrastructure status..." >&2
     infra_name=$(oc --kubeconfig="$kubeconfig" get infrastructure cluster -o jsonpath='{.status.infrastructureName}' 2>/dev/null || echo "")
   fi
   
   # Method 3: Try to get from infrastructure metadata name
   if [[ -z "$infra_name" ]]; then
-    echo "  Trying to get infrastructure name from infrastructure metadata..."
+    echo "  Trying to get infrastructure name from infrastructure metadata..." >&2
     infra_name=$(oc --kubeconfig="$kubeconfig" get infrastructure cluster -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
   fi
   
   # Method 4: Try to extract from install-config secret
   if [[ -z "$infra_name" ]]; then
-    echo "  Trying to get infrastructure name from install-config..."
+    echo "  Trying to get infrastructure name from install-config..." >&2
     local install_config_secret="${cluster}-cluster-install-config"
     if oc get secret "$install_config_secret" -n "$cluster" &>/dev/null; then
       # The infrastructure name is typically the cluster name with a random suffix
@@ -130,16 +131,17 @@ get_infrastructure_name() {
   
   # Method 5: Use cluster name as fallback (last resort)
   if [[ -z "$infra_name" ]]; then
-    echo "  ⚠️  Using cluster name as infrastructure name fallback..."
+    echo "  ⚠️  Using cluster name as infrastructure name fallback..." >&2
     infra_name="$cluster"
   fi
   
   if [[ -z "$infra_name" ]]; then
-    echo "  ❌ Could not get infrastructure name for cluster $cluster using any method"
+    echo "  ❌ Could not get infrastructure name for cluster $cluster using any method" >&2
     return 1
   fi
   
-  echo "  ✅ Infrastructure name: $infra_name"
+  echo "  ✅ Infrastructure name: $infra_name" >&2
+  # Only output the infra_name to stdout (for capture)
   echo "$infra_name"
   return 0
 }
