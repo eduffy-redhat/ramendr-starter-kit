@@ -26,6 +26,9 @@ clusterGroup:
       name: odf-operator
       namespace: openshift-storage
 
+  argoCD:
+    resourceTrackingMethod: annotation
+
   projects:
     - hub
     - opp

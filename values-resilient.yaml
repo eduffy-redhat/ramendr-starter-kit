@@ -3,6 +3,9 @@ clusterGroup:
   name: resilient
   isHubCluster: false
 
+  argoCD:
+    resourceTrackingMethod: annotation
+
   namespaces:
     - golang-external-secrets
     - openshift-cnv
