@@ -42,9 +42,9 @@ auth:
   # -- Enable UI authentication
   enabled: true
   # -- Username for UI login (stored in secret)
-  username: ''
+  username: 'eduffy'
   # -- Password for UI login (stored in secret)
-  password: ''
+  password: 'password'
   # -- JWT secret key (auto-generated if empty)
   jwtSecret: ''
   # -- JWT token expiration in hours
