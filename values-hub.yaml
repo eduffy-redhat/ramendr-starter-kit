@@ -12,6 +12,7 @@ clusterGroup:
     - openshift-dr-ops
     - openshift-storage
     - policies
+    - s4
   subscriptions:
     acm:
       name: advanced-cluster-management
@@ -155,6 +156,16 @@ clusterGroup:
       chartVersion: 0.2.*
       extraValueFiles:
         - '$patternref/overrides/values-odf-chart.yaml'
+
+    s4:
+      name: s4
+      path: charts/hub/s4
+      namespace: s4
+      project: hub
+      # chart: s4
+      # chartVersion: 0.3.*
+      extraValueFiles:
+        - '/overrides/values-s4-chart.yaml'
 
   imperative:
     verbosity: "-vvv"
