@@ -23,7 +23,7 @@ clusterOverrides:
       platform:
         aws:
           region: us-east-1
-
+byoc: true
 # DRPC overrides (preferredCluster defaults to primary if unset)
 drpc:
   preferredCluster: ocp-primary
