@@ -33,10 +33,12 @@ clusterGroup:
     odf-multicluster-orchestrator:
       name: odf-multicluster-orchestrator
       namespace: openshift-operators
+      source: rhdr-ramen-catalog
 
     openshift-data-foundation:
       name: odf-operator
       namespace: openshift-storage
+      source: rhdr-ramen-catalog
 
   argoCD:
     resourceTrackingMethod: annotation
