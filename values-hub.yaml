@@ -31,14 +31,13 @@ clusterGroup:
       channel: stable-v1
 
     odf-multicluster-orchestrator:
-      name: odf-multicluster-orchestrator
+      name: rhdr-multicluster-operator
       namespace: openshift-operators
       source: rhdr-ramen-catalog
 
     openshift-data-foundation:
       name: odf-operator
       namespace: openshift-storage
-      source: rhdr-ramen-catalog
 
   argoCD:
     resourceTrackingMethod: annotation
