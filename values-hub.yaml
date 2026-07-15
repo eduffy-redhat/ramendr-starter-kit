@@ -17,6 +17,7 @@ clusterGroup:
     policies: {}
   indexImages:
     rhdr-ramen:
+      name: rhdr-ramen-catalog
       image: quay.io/openshift-virtualization-dr/rhdr-mirror:fbc-index-staging
   subscriptions:
     acm:
@@ -32,7 +33,7 @@ clusterGroup:
     odf-multicluster-orchestrator:
       name: rhdr-multicluster-operator
       namespace: openshift-operators
-      source: rhdr-ramen
+      source: rhdr-ramen-catalog
 
     openshift-data-foundation:
       name: odf-operator
