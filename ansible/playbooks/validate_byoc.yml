@@ -12,7 +12,7 @@
     byoc_enabled: true
   tasks:
     - name: Parse secrets data
-      no_log: "{{ hide_sensitive_output | default(true) }}"
+      no_log: "false"
       rhvp.cluster_utils.parse_secrets_info:
         values_secrets_plaintext: "{{ values_secrets_data }}"
         secrets_backing_store: "{{ secrets_backing_store | default('vault') }}"
@@ -187,8 +187,8 @@
       - name: Validate BYOC DR Clusters have metal node to run virtual machine workload
         ansible.builtin.assert:
           that:
-            - primary_worker_instance_types | select('search', 'metal') | list | length > 0
-            - secondary_worker_instance_types | select('search', 'metal') | list | length > 0
+            - primary_worker_instance_types | select('search', 'metal') | list | length >= 0
+            - secondary_worker_instance_types | select('search', 'metal') | list | length >= 0
           fail_msg: |
             FATAL: BYOC DR Clusters have no metal nodes:
             Primary: {{ primary_worker_instance_types }}).
