@@ -6,20 +6,20 @@
 
 clusterOverrides:
   primary:
-    name: ocp-primary
+    name: 2-eduffy-2026-07-30
     version: 4.22.1
     install_config:
       metadata:
-        name: ocp-primary
+        name: 2-eduffy-2026-07-30
       platform:
         aws:
           region: us-west-1
   secondary:
-    name: ocp-secondary
+    name: 3-eduffy-2026-07-30
     version: 4.22.1
     install_config:
       metadata:
-        name: ocp-secondary
+        name: 3-eduffy-2026-07-30
       platform:
         aws:
           region: us-east-1
