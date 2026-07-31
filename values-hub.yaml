@@ -21,7 +21,7 @@ clusterGroup:
   indexImages:
     rhdr-ramen:
       name: ramen-catalog
-      image: quay.io/eduffy/fbc-test:2026-07-31
+      image: quay.io/eduffy/fbc-test@sha256:d2023c032c26c882726bad6bda25cbbbc14d457402c563e63d2ed224ca28eef0
       namespace: openshift-operators
 
   subscriptions:
