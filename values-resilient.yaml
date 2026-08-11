@@ -27,6 +27,7 @@ clusterGroup:
     cert-manager-operator: {}
     cert-manager: {}
     vp-manage-proxy-cluster-ca: {}
+    openshift-dr-system: {}
   indexImages:
     rhdr-ramen:
       name: ramen-catalog
