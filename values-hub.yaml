@@ -12,7 +12,6 @@ clusterGroup:
       targetNamespaces: []
     regional-dr: {}
     openshift-dr-system: {}
-    openshift-dr-ops: {}
     openshift-storage: {}
     policies: {}
     cert-manager-operator: {}
