@@ -30,6 +30,7 @@ drpc:
   preferredCluster: ocp-primary
   placementRef:
     namespace: openshift-dr-system
+  namespace: openshift-dr-system
 
 # Set this to "true", provision clusters, and add their kubeconfigs
 # as described in the values-secret template; then run
