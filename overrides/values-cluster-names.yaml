@@ -38,3 +38,9 @@ drpc:
 # That target will run a validation play to ensure the cluster
 # setup will work with ramen patterns
 byoc: true
+
+# By default the RDR Chart will put the CM in openshift-operators but we need it in openshift-dr-system
+drCluster:
+  s3StoreProfiles:
+    ramen:
+      namespace: openshift-dr-system
