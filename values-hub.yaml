@@ -198,7 +198,7 @@ clusterGroup:
       chart: regionaldr-with-virt
       repoURL: https://github.com/eduffy-redhat/regionaldr-with-virt-chart.git
       chartVersion: overrideNamespace
-      path: '.'
+      path: "."
       annotations:
         argocd.argoproj.io/sync-wave: "10"
       syncPolicy:
