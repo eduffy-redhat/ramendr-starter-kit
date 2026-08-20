@@ -43,4 +43,4 @@ byoc: true
 drCluster:
   s3StoreProfiles:
     ramen:
-      namespace: openshift-dr-system
+      # namespace: openshift-dr-system
