@@ -197,8 +197,8 @@ clusterGroup:
       argoProject: opp
       chart: regionaldr-with-virt
       repoURL: https://github.com/eduffy-redhat/regionaldr-with-virt-chart.git
-      chartVersion: 0.4.20
-      targetRevision: overrideNamespace
+      chartVersion: overrideNamespace
+      path: '.'
       annotations:
         argocd.argoproj.io/sync-wave: "10"
       syncPolicy:
