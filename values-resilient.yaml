@@ -66,10 +66,10 @@ clusterGroup:
       name: odf-operator
       namespace: openshift-storage
 
-    rhdr-cluster-operator:
-      name: rhdr-cluster-operator
-      namespace: openshift-dr-system
-      source: ramen-catalog
+#     rhdr-cluster-operator:
+#       name: rhdr-cluster-operator
+#       namespace: openshift-dr-system
+#       source: ramen-catalog
 
     openshift-oadp:
       name: redhat-oadp-operator
