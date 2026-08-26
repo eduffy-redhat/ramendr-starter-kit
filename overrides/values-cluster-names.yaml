@@ -10,7 +10,7 @@ clusterOverrides:
     version: 4.22.1
     install_config:
       metadata:
-        name: 2-eduffy-2026-07-30
+        name: ocp-primary
       platform:
         aws:
           region: us-west-1
@@ -19,7 +19,7 @@ clusterOverrides:
     version: 4.22.1
     install_config:
       metadata:
-        name: 3-eduffy-2026-07-30
+        name: ocp-secondary
       platform:
         aws:
           region: us-east-1
