@@ -13,7 +13,7 @@ docs_url: https://validatedpatterns.io/patterns/ramendr-starter-kit/
 ci_url: https://validatedpatterns.io/ci/?pattern=ramendr-starter-kit
 # can be sandbox, tested or maintained
 tier: sandbox
-owners: mhjacks
+owners: eduffy
 requirements:
   hub: # Main cluster
     compute:
