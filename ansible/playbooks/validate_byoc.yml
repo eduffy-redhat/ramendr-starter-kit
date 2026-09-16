@@ -9,7 +9,7 @@
         pattern_dir: "{{ playbook_dir }}/../../"
     - role: rhvp.cluster_utils.find_vp_secrets
   vars:
-    byoc_enabled: true
+    byoc_enabled: false
   tasks:
     - name: Parse secrets data
       no_log: "{{ hide_sensitive_output | default(true) }}"
