@@ -237,9 +237,9 @@ clusterGroup:
           value: secret/data/global/s4-api-credentials
         # Match regionaldr default profile/bucket names (s3profile-<clusterName>).
         - name: s4Role.buckets[0]
-          value: s3profile-eduffy-primary
+          value: s3profile-eduffy-09-17-primary
         - name: s4Role.buckets[1]
-          value: s3profile-eduffy-secondary
+          value: s3profile-eduffy-09-17-secondary
 
     vp-manage-proxy-cluster-ca:
       name: vp-manage-proxy-cluster-ca
