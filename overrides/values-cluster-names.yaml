@@ -6,20 +6,20 @@
 
 clusterOverrides:
   primary:
-    name: eduffy-09-18-primary
+    name: eduffy-275e2-primary
     version: 4.22.1
     install_config:
       metadata:
-        name: eduffy-09-18-primary
+        name: eduffy-275e2-primary
       platform:
         aws:
           region: us-west-1
   secondary:
-    name: eduffy-09-18-secondary
+    name: eduffy-275e2-secondary
     version: 4.22.1
     install_config:
       metadata:
-        name: eduffy-09-18-secondary
+        name: eduffy-275e2-secondary
       platform:
         aws:
           region: us-east-1
@@ -27,7 +27,7 @@ clusterOverrides:
 # DRPC preferredCluster must be the ACM ManagedCluster name (eduffy-primary), not the
 # install_config.metadata.name (mhj-eduffy-422-p). Ramen uses this to target ManifestWork.
 drpc:
-  preferredCluster: eduffy-09-18-primary
+  preferredCluster: eduffy-275e2-primary
 
 # Set this to "true", provision clusters, and add their kubeconfigs
 # as described in the values-secret template; then run
