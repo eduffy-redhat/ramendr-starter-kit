@@ -35,9 +35,9 @@ regionalDR:
   - name: resilient
     clusters:
       primary:
-        name: eduffy-09-18-primary
+        name: eduffy-275e2-primary
       secondary:
-        name: eduffy-09-18-secondary
+        name: eduffy-275e2-secondary
     drpolicies:
       - interval: 2m
         name: 2m-drpolicy
