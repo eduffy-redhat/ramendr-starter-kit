@@ -18,6 +18,10 @@ clusterGroup:
     cert-manager-operator: {}
     cert-manager: {}
     vp-manage-proxy-cluster-ca: {}
+  indexImages:
+    rhdr:
+      name: rhdr-catalog
+      image: quay.io/redhat-user-workloads/rhdr-tenant/rhdr-fbc/rhdr-fbc-4-22:on-pr-1d0f3b247ca4f9d7d779e17e31b4c25e36f2ed73
   subscriptions:
     acm:
       name: advanced-cluster-management
@@ -32,6 +36,8 @@ clusterGroup:
     odf-multicluster-orchestrator:
       name: odf-multicluster-orchestrator
       namespace: openshift-operators
+      source: rhdr-catalog
+      channel: stable-4.22
 
     openshift-data-foundation:
       name: odf-operator
