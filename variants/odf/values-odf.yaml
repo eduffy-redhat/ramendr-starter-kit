@@ -33,8 +33,8 @@ clusterGroup:
       namespace: external-secrets-operator
       channel: stable-v1
 
-    odf-multicluster-orchestrator:
-      name: odf-multicluster-orchestrator
+    rhdr-multicluster-orchestrator:
+      name: rhdr-multicluster-orchestrator
       namespace: openshift-operators
       source: rhdr-catalog
       channel: stable-4.22
