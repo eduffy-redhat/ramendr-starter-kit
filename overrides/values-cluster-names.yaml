@@ -6,28 +6,28 @@
 
 clusterOverrides:
   primary:
-    name: ocp-primary
+    name: eduffy-primary-2026-10-02
     version: 4.22.1
     install_config:
       metadata:
-        name: ocp-primary
+        name: eduffy-primary-2026-10-02
       platform:
         aws:
           region: us-west-1
   secondary:
-    name: ocp-secondary
+    name: eduffy-secondary-2026-10-02
     version: 4.22.1
     install_config:
       metadata:
-        name: ocp-secondary
+        name: eduffy-secondary-2026-10-02
       platform:
         aws:
           region: us-east-1
 
-# DRPC preferredCluster must be the ACM ManagedCluster name (ocp-primary), not the
+# DRPC preferredCluster must be the ACM ManagedCluster name (eduffy-primary-2026-10-02), not the
 # install_config.metadata.name (mhj-ocp-422-p). Ramen uses this to target ManifestWork.
 drpc:
-  preferredCluster: ocp-primary
+  preferredCluster: eduffy-primary-2026-10-02
 
 # Set this to "true", provision clusters, and add their kubeconfigs
 # as described in the values-secret template; then run

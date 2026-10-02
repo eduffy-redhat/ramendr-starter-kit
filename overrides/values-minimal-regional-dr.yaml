@@ -5,6 +5,6 @@ regionalDR:
   - name: resilient
     clusters:
       primary:
-        name: ocp-primary
+        name: eduffy-primary-2026-10-02
       secondary:
-        name: ocp-secondary
+        name: eduffy-secondary-2026-10-02
