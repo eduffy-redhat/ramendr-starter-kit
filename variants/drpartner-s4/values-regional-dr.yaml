@@ -44,4 +44,4 @@ regionalDR:
 
 # Run in BYOC mode by default. Most test scenarios require this for this
 # variant.
-byoc: true
+byoc: false
